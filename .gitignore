@@ -5,6 +5,7 @@ dist/
 *.db-wal
 *.db-shm
 server.log
+electron.log
 .DS_Store
 Thumbs.db
 .env

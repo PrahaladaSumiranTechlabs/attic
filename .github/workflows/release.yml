@@ -46,6 +46,12 @@ jobs:
         # own, everyone deploying to a Pi or a VPS is broken, so check it here.
         run: node scripts/smoke-test.js
 
+      - name: Verify Electron's bundled Node can run the server
+        # fork() runs server.js on Electron's Node, not the system one, and the
+        # server needs node:sqlite (22.5+). Electron 33 and earlier bundle Node
+        # 20 and fail at require(). Catch that here rather than in a release.
+        run: node scripts/check-electron-node.js
+
       - name: Build
         run: npm run ${{ matrix.script }}
         env:

@@ -22,7 +22,7 @@
     "node": ">=22.5.0"
   },
   "devDependencies": {
-    "electron": "^33.0.0",
+    "electron": "^43.3.0",
     "electron-builder": "^25.0.0"
   },
   "build": {
@@ -38,7 +38,10 @@
       "output": "dist"
     },
     "win": {
-      "target": ["nsis", "portable"],
+      "target": [
+        "nsis",
+        "portable"
+      ],
       "icon": "public/icon.png"
     },
     "nsis": {
@@ -46,14 +49,23 @@
       "allowToChangeInstallationDirectory": true
     },
     "mac": {
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "icon": "public/icon.png",
       "category": "public.app-category.productivity"
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "icon": "public/icon.png",
       "category": "Office"
     }
+  },
+  "allowScripts": {
+    "electron@43.3.0": true
   }
 }

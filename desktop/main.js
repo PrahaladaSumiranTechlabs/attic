@@ -9,6 +9,12 @@
 // The server itself stays a plain zero-dependency Node script. Electron is a
 // shell around it, never a dependency of it — server.js must keep running on
 // its own, because that is what anyone deploying to a Pi or a VPS will do.
+//
+// ELECTRON VERSION IS LOAD-BEARING. fork() runs server.js on Electron's own
+// bundled Node, not the system one, and server.js needs `node:sqlite` (Node
+// 22.5+). Electron 33 and earlier bundle Node 20, where the server dies at
+// require() with ERR_UNKNOWN_BUILTIN_MODULE. Do not downgrade without checking:
+//   ELECTRON_RUN_AS_NODE=1 electron -e "require('node:sqlite')"
 
 const { app, BrowserWindow, Tray, Menu, shell, dialog, clipboard } = require('electron');
 const path = require('node:path');
