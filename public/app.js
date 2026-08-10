@@ -930,6 +930,31 @@
   document.getElementById('act-done').onclick = function () { commitEdit(); };
   document.getElementById('act-link').onclick = function () { startLink(); };
 
+  // Finish the open note as soon as a press lands anywhere else.
+  //
+  // This cannot be left to the textarea's blur event. A note's mousedown calls
+  // preventDefault to own the drag, and preventDefault also cancels the focus
+  // change — so the textarea never blurred, editingId stayed set, and every
+  // later drag returned early. Tapping one note froze the entire wall.
+  //
+  // Capture phase, so it runs before the note's own handler and the drag it
+  // starts sees editingId already cleared.
+  function commitOnOutsidePress(e) {
+    if (!editingId) return;
+    var t = e.target;
+    if (t === inlineTA) return;
+    // Let the action bar's own buttons act on the note first.
+    var node = t;
+    while (node) {
+      if (node === actions) return;
+      node = node.parentNode;
+    }
+    commitEdit();
+  }
+
+  document.addEventListener('mousedown', commitOnOutsidePress, true);
+  document.addEventListener('touchstart', commitOnOutsidePress, true);
+
   document.getElementById('act-del').onclick = function () {
     if (!editingId) return;
     var id = editingId;
@@ -1126,10 +1151,22 @@
     else { addClass(free, 'on'); removeClass(kan, 'on'); }
   }
 
+  // Renaming moves the room's address too. A display name that leaves the URL
+  // at /main is a name only half applied — "Kitchen Ideas" should live at
+  // /kitchen-ideas, and the old address forwards so tablets keep working.
   document.getElementById('room-rename').onclick = function () {
-    saveMeta({ title: document.getElementById('room-title').value }, function () {
+    var title = document.getElementById('room-title').value;
+    xhr('POST', '/api/wall/rename', { wall: wallId, title: title }, function (err, data) {
+      if (err || !data || !data.ok) { toast('Could not rename that room'); return; }
+      if (data.moved && data.url) {
+        window.location.href = data.url;
+        return;
+      }
+      meta = data.meta;
+      lastMetaJSON = JSON.stringify(meta);
+      applyLayout();
       refreshRoomList();
-      toast('Room renamed');
+      toast(data.note ? 'Renamed — ' + data.note : 'Renamed');
     });
   };
 

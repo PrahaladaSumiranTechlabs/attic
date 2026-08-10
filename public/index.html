@@ -34,20 +34,40 @@
 </div>
 
 <div id="bar">
-  <span id="brand">Attic</span>
+  <span id="brandwrap">
+    <svg id="mark" viewBox="0 0 64 64" aria-hidden="true">
+      <path d="M12 51V27L32 12l20 15v24z" fill="#ffe89a" stroke="#c8a020"
+            stroke-width="4" stroke-linejoin="round"/>
+      <path d="M22 34h20M22 42h13" stroke="#b8901a" stroke-width="3.4"
+            stroke-linecap="round" fill="none"/>
+    </svg>
+    <span id="brand">Attic</span>
+  </span>
+
   <span id="wallname" title="this room — tap to see and switch rooms"></span>
-  <button id="add" type="button">+ note</button>
+
+  <span class="bar-sep"></span>
+  <button id="add" class="primary" type="button">+ note</button>
+  <span id="swatches"></span>
+
+  <span class="bar-sep"></span>
   <button id="newwall" type="button">new wall</button>
   <button id="share" type="button" title="show a QR to open this wall on another device">share</button>
-  <span id="swatches"></span>
-  <button id="zoomout" type="button" title="zoom out">&minus;</button>
+
+  <span class="bar-sep"></span>
+  <button id="zoomout" class="icon" type="button" title="zoom out">&minus;</button>
   <span id="zoomlevel">100%</span>
-  <button id="zoomin" type="button" title="zoom in">+</button>
-  <button id="overview" type="button">fit</button>
-  <button id="kiosk" type="button">display</button>
-  <button id="eink" type="button">e-ink</button>
-  <span id="who"></span>
-  <span id="status">connecting</span>
+  <button id="zoomin" class="icon" type="button" title="zoom in">+</button>
+  <button id="overview" type="button" title="frame everything on the wall">fit</button>
+
+  <span class="bar-sep"></span>
+  <button id="kiosk" type="button" title="wall-mounted tablet mode">display</button>
+  <button id="eink" type="button" title="for e-paper screens">e-ink</button>
+
+  <span id="barstate">
+    <span id="who"></span>
+    <span id="status">connecting</span>
+  </span>
 </div>
 
 <div id="minimap" title="who is where on the wall">

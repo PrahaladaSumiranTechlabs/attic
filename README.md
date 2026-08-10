@@ -55,8 +55,12 @@ one would create a room that exists in the database but that no URL can reach.
 
 Tap the room chip in the toolbar to open the room panel. From there you can:
 
-- **Give the room a name.** The address stays a slug (`/sprint`); the name can
-  be anything (`Sprint 14 Board`) and is what the chip and the room list show.
+- **Give the room a name, and it moves.** Naming a room "Kitchen Ideas" puts it
+  at `/kitchen-ideas` — a display name that left the URL at `/main` was a name
+  only half applied. The old address forwards, so a tablet on a wall keeps
+  working, and a chain of renames still resolves in one hop. A name with no
+  usable letters keeps the current address rather than moving the room to junk,
+  and a rename never merges into an address that is already occupied.
 - **Switch layout** between a free wall and columns, and edit the column names.
 - **See every room** on the server with its note count, and switch between them.
 - **Delete a room.** This is a hard delete of its notes and its configuration,
@@ -284,7 +288,8 @@ streaming is exactly what old hardware cannot do.
 | `GET` | `/api/state?since=&wall=&id=&name=&vx=&vy=&vw=&vh=` | delta + presence heartbeat. `since=-1` for a full snapshot |
 | `POST` | `/api/note` | upsert. Accepts JSON or form-encoded |
 | `POST` | `/api/note/delete` | `{id, wall}` |
-| `POST` | `/api/wall` | `{wall, title?, layout?, columns?}` — rename, switch layout, set columns |
+| `POST` | `/api/wall` | `{wall, title?, layout?, columns?}` — set name, layout, columns |
+| `POST` | `/api/wall/rename` | `{wall, title}` — renames **and moves** the room, leaving a forwarding address |
 | `POST` | `/api/wall/delete` | `{wall}` — hard-deletes the room's notes and config |
 | `POST` | `/api/wall/new` | mints an unused slug |
 | `POST` | `/api/wall/share` | mints (or returns) the room's read-only token |
@@ -374,6 +379,13 @@ it hosted for you — no machine to spare, a classroom, a lab — write to
 
 If it saved you buying a tablet, [buy us a coffee](https://buymeacoffee.com/pstechlabs).
 Entirely optional; it changes nothing about what you get.
+
+## Brand
+
+The visual system — mark, wordmark, palette, button weights — is written down in
+[BRAND.md](BRAND.md). It has no CSS custom properties anywhere in the app,
+because they do not exist on the browsers this product exists to support; the
+values are literal in `style.css` and BRAND.md is the register they copy from.
 
 ## Licence
 

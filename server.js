@@ -106,6 +106,14 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS links_wall ON links(wall, seq);
 
+  -- Where a room used to live. Renaming a room moves its address, and a tablet
+  -- on a wall is still pointing at the old one — so old addresses keep working
+  -- instead of quietly becoming a new empty room.
+  CREATE TABLE IF NOT EXISTS wall_aliases (
+    old  TEXT PRIMARY KEY,
+    wall TEXT NOT NULL
+  );
+
   -- A room only needs a row here once it has a name or a layout; rooms still
   -- come into being by being visited, and an unconfigured one has no row.
   CREATE TABLE IF NOT EXISTS walls (
@@ -194,6 +202,19 @@ const q = {
   allMeta: db.prepare(`SELECT * FROM walls`),
   dropNotes: db.prepare(`DELETE FROM notes WHERE wall = ?`),
   dropMeta: db.prepare(`DELETE FROM walls WHERE wall = ?`),
+  alias: db.prepare(`SELECT wall FROM wall_aliases WHERE old = ?`),
+  addAlias: db.prepare(`
+    INSERT INTO wall_aliases (old, wall) VALUES (?, ?)
+    ON CONFLICT(old) DO UPDATE SET wall = excluded.wall
+  `),
+  // Any alias that pointed at the old address should follow the room forward,
+  // so a chain of renames never needs more than one hop to resolve.
+  repointAliases: db.prepare(`UPDATE wall_aliases SET wall = ? WHERE wall = ?`),
+  clearAlias: db.prepare(`DELETE FROM wall_aliases WHERE old = ?`),
+  dropAliasesTo: db.prepare(`DELETE FROM wall_aliases WHERE wall = ?`),
+  moveNotes: db.prepare(`UPDATE notes SET wall = ? WHERE wall = ?`),
+  moveLinks: db.prepare(`UPDATE links SET wall = ? WHERE wall = ?`),
+  moveMeta: db.prepare(`UPDATE walls SET wall = ? WHERE wall = ?`),
   byToken: db.prepare(`SELECT * FROM walls WHERE view_token = ? AND view_token != ''`),
   setToken: db.prepare(`
     INSERT INTO walls (wall, title, layout, columns, seq, view_token)
@@ -272,7 +293,33 @@ const RESERVED = new Set([
 // because the router resolves those paths to something else.
 function cleanWall(v) {
   const s = String(v || '').toLowerCase();
-  return WALL_RE.test(s) && !RESERVED.has(s) ? s : DEFAULT_WALL;
+  const slug = WALL_RE.test(s) && !RESERVED.has(s) ? s : DEFAULT_WALL;
+  return followAlias(slug);
+}
+
+// Renames leave a forwarding address behind. Followed with a hop limit so a
+// rename cycle (A -> B, later B -> A) cannot spin forever.
+function followAlias(slug) {
+  let cur = slug;
+  for (let i = 0; i < 5; i++) {
+    const row = q.alias.get(cur);
+    if (!row || row.wall === cur) return cur;
+    cur = row.wall;
+  }
+  return cur;
+}
+
+// Turns "Kitchen Ideas!" into "kitchen-ideas". The address people type should
+// look like what they called the room.
+function slugify(title) {
+  let s = String(title || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48)
+    .replace(/-+$/g, '');
+  if (!s || !WALL_RE.test(s) || RESERVED.has(s)) return '';
+  return s;
 }
 
 // Three words beat eight random characters: a wall slug gets read aloud across
@@ -649,6 +696,64 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Rename a room, address and all. Naming a room "Kitchen Ideas" should put it
+  // at /kitchen-ideas — a display name that leaves the URL as /main is a name
+  // only half applied.
+  if (p === '/api/wall/rename' && req.method === 'POST') {
+    readBody(req, (raw) => {
+      const input = parseBody(raw, req.headers['content-type']);
+      const from = cleanWall(input.wall);
+      const title = String(input.title || '').slice(0, 60);
+
+      let target = slugify(title);
+      if (!target) {
+        // Nothing usable to build an address from — keep the address, set the
+        // title, and say so rather than silently moving the room to junk.
+        const meta = saveMeta(from, { title });
+        sendJSON(res, 200, { ok: true, moved: false, wall: from, meta,
+          note: 'kept the current address' });
+        return;
+      }
+
+      if (target === from) {
+        sendJSON(res, 200, { ok: true, moved: false, wall: from,
+          meta: saveMeta(from, { title }) });
+        return;
+      }
+
+      // Never merge into a room that already has something in it.
+      let candidate = target;
+      let n = 2;
+      while ((q.countLive.get(candidate).n > 0 || q.getMeta.get(candidate)) && n < 50) {
+        candidate = target + '-' + n;
+        n++;
+      }
+
+      q.moveNotes.run(candidate, from);
+      q.moveLinks.run(candidate, from);
+      if (q.getMeta.get(from)) q.moveMeta.run(candidate, from);
+
+      // Any address that already forwarded to the old name follows the room
+      // forward too, so a chain of renames stays one hop deep.
+      q.repointAliases.run(candidate, from);
+      // The address just vacated forwards to the new one.
+      q.addAlias.run(from, candidate);
+      // The new address is a real room now, so it must not also be a forward.
+      q.clearAlias.run(candidate);
+
+      const meta = saveMeta(candidate, { title });
+      sendJSON(res, 200, {
+        ok: true,
+        moved: true,
+        wall: candidate,
+        url: candidate === DEFAULT_WALL ? '/' : '/' + candidate,
+        renamedFrom: from,
+        meta,
+      });
+    });
+    return;
+  }
+
   // Rename a room, switch its layout, or edit its columns.
   if (p === '/api/wall' && req.method === 'POST') {
     readBody(req, (raw) => {
@@ -678,6 +783,9 @@ const server = http.createServer((req, res) => {
       q.dropNotes.run(wallId);
       q.dropLinks.run(wallId);
       q.dropMeta.run(wallId);
+      // Forwarding addresses to a room that no longer exists would resurrect it
+      // as an empty room on the next visit.
+      q.dropAliasesTo.run(wallId);
       for (const [id, peer] of peers) if (peer.wall === wallId) peers.delete(id);
       sendJSON(res, 200, { ok: true, wall: wallId, removed, seq: nextSeq() });
     });

@@ -217,6 +217,38 @@ async function waitForServer(tries = 60) {
     check('columns are customisable', cols.body.meta.columns.join(',') === 'Backlog,Doing,Shipped');
     check('layout switches to a board', cols.body.meta.layout === 'kanban');
 
+    console.log('renaming moves the address');
+    await post('/api/note', { id: 'ra', wall: 'old-room', x: 5, y: 5, text: 'travels along' });
+    const ren = await post('/api/wall/rename', { wall: 'old-room', title: 'Kitchen Ideas' });
+    check('a rename derives the address from the name',
+      ren.body.moved === true && ren.body.wall === 'kitchen-ideas', ren.body.wall);
+
+    const relocated = await get('/api/state?since=-1&wall=kitchen-ideas&id=smoke');
+    check('notes travel with the room', relocated.body.notes.some((n) => n.id === 'ra'));
+    check('the name is kept alongside the address', relocated.body.meta.title === 'Kitchen Ideas');
+
+    // A tablet on a wall is still pointing at the old address.
+    const viaOld = await get('/api/state?since=-1&wall=old-room&id=smoke');
+    check('the old address forwards to the new one', viaOld.body.wallId === 'kitchen-ideas');
+
+    await post('/api/wall/rename', { wall: 'kitchen-ideas', title: 'Family Board' });
+    const viaOldest = await get('/api/state?since=-1&wall=old-room&id=smoke');
+    check('a chain of renames still resolves in one hop',
+      viaOldest.body.wallId === 'family-board', viaOldest.body.wallId);
+
+    const junk = await post('/api/wall/rename', { wall: 'family-board', title: '!!!' });
+    check('a name with no usable letters keeps the address',
+      junk.body.moved === false && junk.body.wall === 'family-board');
+
+    await post('/api/note', { id: 'rb', wall: 'taken-name', x: 5, y: 5, text: 'sitting here' });
+    await post('/api/note', { id: 'rc', wall: 'other-room', x: 5, y: 5, text: 'renaming me' });
+    const clash = await post('/api/wall/rename', { wall: 'other-room', title: 'Taken Name' });
+    check('renaming never merges into an occupied address',
+      clash.body.wall === 'taken-name-2', clash.body.wall);
+    const untouched = await get('/api/state?since=-1&wall=taken-name&id=smoke');
+    check('the occupied room is left alone',
+      untouched.body.notes.length === 1 && untouched.body.notes[0].id === 'rb');
+
     console.log('kanban is structural');
     const board = await post('/api/template', { name: 'kanban', wall: 'board-wall' });
     check('the kanban template sets the layout', board.body.meta.layout === 'kanban');

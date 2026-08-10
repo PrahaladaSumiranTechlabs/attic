@@ -38,9 +38,9 @@ body.kiosk #canvas { cursor: default; }
   /* Faint grid so panning a large empty wall still gives a sense of place.
      A repeating gradient is cheap; no image request, no canvas. */
   background-image:
-    linear-gradient(to right, rgba(0,0,0,0.045) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(0,0,0,0.045) 1px, transparent 1px);
-  background-size: 40px 40px;
+    linear-gradient(to right, rgba(120, 108, 78, 0.055) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(120, 108, 78, 0.055) 1px, transparent 1px);
+  background-size: 48px 48px;
   -webkit-transform-origin: 0 0;
   transform-origin: 0 0;
 }
@@ -95,13 +95,16 @@ body.kiosk #canvas { cursor: default; }
   cursor: se-resize;
   background-image: linear-gradient(
     135deg,
-    transparent 0%, transparent 55%,
-    rgba(0,0,0,0.22) 55%, rgba(0,0,0,0.22) 62%,
-    transparent 62%, transparent 72%,
-    rgba(0,0,0,0.22) 72%, rgba(0,0,0,0.22) 79%,
-    transparent 79%
+    transparent 0%, transparent 62%,
+    rgba(0, 0, 0, 0.13) 62%, rgba(0, 0, 0, 0.13) 68%,
+    transparent 68%, transparent 76%,
+    rgba(0, 0, 0, 0.13) 76%, rgba(0, 0, 0, 0.13) 82%,
+    transparent 82%
   );
+  opacity: 0;
 }
+
+.note:hover .note-grip { opacity: 1; }
 
 .c-yellow { background: #ffe89a; }
 .c-pink   { background: #ffc2d1; }
@@ -119,38 +122,89 @@ body.kiosk #canvas { cursor: default; }
   right: 0;
   height: 48px;
   line-height: 48px;
-  background: rgba(255, 255, 255, 0.94);
-  border-bottom: 1px solid #ddd;
-  padding: 0 10px;
+  background: rgba(252, 250, 244, 0.96);
+  border-bottom: 1px solid #e2ddd0;
+  padding: 0 12px;
   z-index: 1000;
   white-space: nowrap;
   overflow: hidden;
 }
 
+/* The mark travels with the wordmark: a sticky note with a pitched roof, which
+   reads as a note and as a house at any size. */
+#brandwrap { margin-right: 12px; }
+
+#mark {
+  width: 22px;
+  height: 22px;
+  vertical-align: -5px;
+  margin-right: 7px;
+}
+
 #brand {
-  font-weight: bold;
-  font-size: 15px;
-  letter-spacing: 0.04em;
-  margin-right: 14px;
+  font-weight: 700;
+  font-size: 15.5px;
+  letter-spacing: 0.055em;
   color: #8a6d1f;
 }
 
-#bar button,
-#editor-bar button {
-  font-size: 15px;
-  min-height: 34px;
-  padding: 6px 14px;
-  margin-right: 8px;
-  border: 1px solid #bbb;
-  border-radius: 4px;
-  background: #fff;
-  color: #222;
+/* Three weights of button, because eight identical grey buttons told you
+   nothing about which one you actually came here to press.
+     primary  — the one action this screen is for
+     default  — things you do occasionally
+     icon/on  — toggles and steppers, quietest until active */
+#bar button {
+  font-size: 14px;
+  min-height: 32px;
+  padding: 6px 13px;
+  margin-right: 6px;
+  border: 1px solid #ddd6c2;
+  border-radius: 5px;
+  background: #fffdf8;
+  color: #4a463d;
   cursor: pointer;
 }
 
-#bar button:active,
-#editor-bar button:active { background: #eee; }
-#bar button.on { background: #ffe89a; border-color: #c8a020; }
+#bar button:hover { background: #fff; border-color: #c9c0a6; }
+#bar button:active { background: #f2ece0; }
+
+#bar button.primary {
+  background: #8a6d1f;
+  border-color: #7a5f16;
+  color: #fffdf5;
+  font-weight: 600;
+}
+
+#bar button.primary:hover { background: #9a7a26; }
+#bar button.primary:active { background: #7a5f16; }
+
+#bar button.icon {
+  min-width: 32px;
+  padding: 6px 9px;
+  font-size: 15px;
+  color: #6f6a5e;
+}
+
+#bar button.on {
+  background: #ffe89a;
+  border-color: #c8a020;
+  color: #6b530f;
+  font-weight: 600;
+}
+
+/* Groups the toolbar into clusters: identity, creating, sharing, viewing,
+   modes. Cheaper to scan than one undifferentiated row. */
+.bar-sep {
+  display: inline-block;
+  width: 1px;
+  height: 20px;
+  margin: 0 10px 0 4px;
+  vertical-align: -4px;
+  background: #e2ddd0;
+}
+
+#barstate { float: right; }
+body.eink #barstate { float: right; }
 
 #swatches { margin-left: 4px; margin-right: 8px; }
 
@@ -197,7 +251,7 @@ body.eink #wallname { background: #fff; border: 2px solid #000; color: #000; bor
 
 #who, #status {
   font-size: 12px;
-  color: #777;
+  color: #9a9384;
   margin-left: 12px;
 }
 
@@ -278,16 +332,19 @@ body.eink #empty .or { color: #000; }
 
 #minimap {
   position: fixed;
-  right: 10px;
-  bottom: 10px;
-  width: 170px;
-  height: 128px;
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid #ccc;
-  border-radius: 3px;
+  right: 12px;
+  bottom: 12px;
+  width: 152px;
+  height: 114px;
+  background: rgba(255, 253, 248, 0.72);
+  border: 1px solid #e2ddd0;
+  border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
   z-index: 1000;
   cursor: pointer;
 }
+
+#minimap:hover { background: rgba(255, 253, 248, 0.95); }
 
 #mm-inner { position: relative; width: 100%; height: 100%; }
 
