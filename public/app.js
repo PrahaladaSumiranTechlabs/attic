@@ -44,6 +44,7 @@
   var failures = 0;
   var zoom = 1;
   var fitted = false;  // true when zoom was set by "fit"
+  var focusedNote = null;  // the note a read-only viewer has tapped into
   var kioskOn = false;
   var einkOn = false;
   var lastStatus = '';
@@ -303,10 +304,11 @@
     return { x: x0, y: y0, w: (maxX + pad) - x0, h: (maxY + pad) - y0 };
   }
 
-  function fitToContent() {
-    var b = contentBounds();
-    if (!b) { setZoom(1); return; }
-
+  // Frames an arbitrary rectangle of wall in the viewport: scale it to fit, then
+  // centre whatever slack is left. "Fit everything" and "zoom to this one note"
+  // are the same operation on a different rectangle, so they share this — two
+  // copies of the arithmetic would drift apart.
+  function frameBox(b, maxZoom) {
     var top = (kioskOn || viewOnly) ? 0 : 48;
     // The viewer's control bar sits at the bottom; leave it room so the lowest
     // note is not tucked underneath it.
@@ -315,27 +317,58 @@
     var availH = viewH() - top - bottom;
 
     var z = Math.min(availW / b.w, availH / b.h);
-    // A shared view is usually a whole screen given over to one wall, so it
-    // scales up to fill it. An editing view stops at 100%, where zooming past
-    // life size would just make the note you are about to type into wobble.
-    var maxZoom = viewOnly ? 3 : 1;
     z = Math.max(0.1, Math.min(maxZoom, z));
-
     zoom = z;
-    fitted = true;
 
     var scaledW = b.w * z;
     var scaledH = b.h * z;
 
-    // Pull the content's own top-left to the origin, then centre whatever slack
-    // is left. When the content is larger than the screen the slack is zero and
-    // this degrades to "start at the content, not at the empty grid".
+    // Pull the box's own top-left to the origin, then centre the slack. When the
+    // box is larger than the screen the slack is zero and this degrades to
+    // "start at the content, not at the empty grid".
     offX = -b.x * z + Math.max(0, (availW - scaledW) / 2);
     offY = -b.y * z + Math.max(0, (availH - scaledH) / 2) + top;
 
+    for (var fid in els) {
+      if (els.hasOwnProperty(fid) && fid !== focusedNote) removeClass(els[fid], 'focused');
+    }
+
     addClass(body, 'fitted');
     window.scrollTo(0, 0);
-    applyZoom(Math.max(availW, scaledW), Math.max(availH, scaledH) + top);
+    applyZoom(Math.max(availW, scaledW), Math.max(availH, scaledH) + top + bottom);
+  }
+
+  function fitToContent() {
+    var b = contentBounds();
+    if (!b) { setZoom(1); return; }
+    fitted = true;
+    focusedNote = null;
+    // A shared view is usually a whole screen given over to one wall, so it
+    // scales up to fill it. An editing view stops at 100%, where zooming past
+    // life size would just make the note you are about to type into wobble.
+    frameBox(b, viewOnly ? 3 : 1);
+  }
+
+  // Tap a note in a read-only view to read it. A shared wall is usually across a
+  // room or on a small panel, where a note at fit-scale is legible only in
+  // theory — so a tap fills the screen with one, and a second tap goes back.
+  function zoomToNote(id) {
+    var el = els[id];
+    if (!el) return;
+    if (focusedNote === id) { fitToContent(); return; }
+
+    var pad = 26;
+    var b = {
+      x: (parseInt(el.style.left, 10) || 0) - pad,
+      y: (parseInt(el.style.top, 10) || 0) - pad,
+      w: el.offsetWidth + pad * 2,
+      h: el.offsetHeight + pad * 2
+    };
+
+    fitted = false;
+    focusedNote = id;
+    frameBox(b, 4);
+    addClass(el, 'focused');
   }
 
   overviewBtn.onclick = function () {
@@ -479,8 +512,25 @@
   wall.addEventListener('click', function (e) {
     var t = e.target;
     if (!t || !t.getAttribute) return;
+
+    if (viewOnly) {
+      // Walk up to the note that was tapped: the press usually lands on the
+      // body or the author line inside it, not the note element itself.
+      var node = t;
+      while (node && node !== wall) {
+        if (node.getAttribute && node.getAttribute('data-note')) {
+          zoomToNote(node.getAttribute('data-note'));
+          return;
+        }
+        node = node.parentNode;
+      }
+      // Tapping the board rather than a note goes back to the whole wall.
+      if (focusedNote) fitToContent();
+      return;
+    }
+
     var id = t.getAttribute('data-id');
-    if (!id || !links[id] || viewOnly) return;
+    if (!id || !links[id]) return;
     if (window.confirm('Remove this connection?')) deleteLink(id);
   }, false);
 
@@ -656,6 +706,7 @@
       bodyEl.className = 'note-body';
       var grip = document.createElement('div');
       grip.className = 'note-grip';
+      el.setAttribute('data-note', n.id);
       el.appendChild(bodyEl);
       el.appendChild(grip);
       wall.appendChild(el);
@@ -841,6 +892,19 @@
 
   var actions = document.getElementById('noteactions');
 
+  // True from the moment a press lands on the action bar until just after the
+  // resulting click has been handled, so the textarea's blur does not tear the
+  // note down underneath the button being pressed.
+  var pressingActions = false;
+
+  function actionsDown() { pressingActions = true; }
+  function actionsUp() { window.setTimeout(function () { pressingActions = false; }, 0); }
+
+  actions.addEventListener('mousedown', actionsDown, true);
+  actions.addEventListener('touchstart', actionsDown, true);
+  document.addEventListener('mouseup', actionsUp, true);
+  document.addEventListener('touchend', actionsUp, true);
+
   function positionActions(id) {
     var el = els[id];
     if (!el) return;
@@ -867,7 +931,15 @@
       inlineTA.className = 'note-edit';
       // Commit on blur: clicking anywhere else is how you finish a note, the
       // same way it works on a paper one.
-      inlineTA.onblur = function () { if (editingId) commitEdit(); };
+      //
+      // Except the action bar. Pressing link/colour/delete moves focus off the
+      // textarea, so blur fires and clears editingId *before* the button's own
+      // click handler runs — and every handler starts with "if (!editingId)
+      // return", so all three silently did nothing.
+      inlineTA.onblur = function () {
+        if (pressingActions) return;
+        if (editingId) commitEdit();
+      };
       inlineTA.onkeydown = function (e) {
         var code = e.keyCode || e.which;
         if (code === 27) { cancelEdit(); return false; }
@@ -1410,6 +1482,7 @@
   document.onkeydown = function (e) {
     var code = e.keyCode || e.which;
     if (code !== 27) return;
+    if (viewOnly && focusedNote) { fitToContent(); return; }
     if (linking) { stopLink(); toast('Linking cancelled'); return; }
     if (editingId) { cancelEdit(); return; }
     if (sharebox && sharebox.className === 'open') { sharebox.className = ''; return; }
@@ -1581,7 +1654,7 @@
             setHTML(document.getElementById('view-title'),
                     escapeHTML(meta.title || 'Shared wall'), null);
             window.setTimeout(fitToContent, 60);
-          } else if (fitted && data.notes.length) {
+          } else if (fitted && !focusedNote && data.notes.length) {
             // Notes moved or arrived. A shared screen nobody is driving should
             // re-frame itself rather than let new notes fall off the edge.
             window.setTimeout(fitToContent, 60);

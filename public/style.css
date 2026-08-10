@@ -975,7 +975,15 @@ body.viewonly #empty,
 body.viewonly #noteactions,
 body.viewonly .note-grip { display: none; }
 
-body.viewonly #canvas, body.viewonly .note { cursor: default; }
+body.viewonly #canvas { cursor: default; }
+
+/* A note is the one thing worth pressing in a read-only view. */
+body.viewonly .note { cursor: zoom-in; }
+body.viewonly .note.focused {
+  cursor: zoom-out;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.28);
+  z-index: 400;
+}
 body.viewonly .note { -webkit-user-select: text; -moz-user-select: text; user-select: text; }
 
 #viewbar { display: none; }
