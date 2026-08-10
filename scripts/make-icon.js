@@ -10,7 +10,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
 
-const S = 256;                       // output is square
+// 1024, not 256. Windows accepts a 256px icon; macOS and Linux both require at
+// least 512, and electron-builder fails the whole build rather than scaling one
+// up — which is why Windows releases succeeded while mac and linux did not.
+const S = 1024;                      // output is square
 const OUT = path.join(__dirname, '..', 'public', 'icon.png');
 
 const CREAM = [244, 241, 234, 255];
@@ -72,13 +75,13 @@ for (let y = 0; y < S; y++) {
     const py = y + 0.5;
 
     let c = CLEAR;
-    if (inRoundedSquare(px, py, 44)) c = CREAM;
+    if (inRoundedSquare(px, py, S * 0.172)) c = CREAM;
 
     if (inHouse(px, py)) {
       c = NOTE;
       if (inRule(px, py, 20 * k, 33 * k, 24 * k, 3.5 * k)) c = LINE;
       else if (inRule(px, py, 20 * k, 41 * k, 16 * k, 3.5 * k)) c = LINE;
-      if (onEdge(px, py, 5)) c = EDGE;
+      if (onEdge(px, py, S / 51)) c = EDGE;
     }
 
     raw[o++] = c[0]; raw[o++] = c[1]; raw[o++] = c[2]; raw[o++] = c[3];

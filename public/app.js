@@ -307,12 +307,19 @@
     var b = contentBounds();
     if (!b) { setZoom(1); return; }
 
-    var top = kioskOn ? 0 : 48;
+    var top = (kioskOn || viewOnly) ? 0 : 48;
+    // The viewer's control bar sits at the bottom; leave it room so the lowest
+    // note is not tucked underneath it.
+    var bottom = viewOnly ? 58 : 0;
     var availW = viewW();
-    var availH = viewH() - top;
+    var availH = viewH() - top - bottom;
 
     var z = Math.min(availW / b.w, availH / b.h);
-    z = Math.max(0.1, Math.min(1, z)); // never zoom past 100% just to fill space
+    // A shared view is usually a whole screen given over to one wall, so it
+    // scales up to fill it. An editing view stops at 100%, where zooming past
+    // life size would just make the note you are about to type into wobble.
+    var maxZoom = viewOnly ? 3 : 1;
+    z = Math.max(0.1, Math.min(maxZoom, z));
 
     zoom = z;
     fitted = true;
@@ -1370,6 +1377,10 @@
     einkOn = on;
     if (on) addClass(body, 'eink'); else removeClass(body, 'eink');
     if (on) addClass(einkBtn, 'on'); else removeClass(einkBtn, 'on');
+    // The viewer has its own button for this; keep both in step from one place,
+    // since boot restores the stored preference after the viewer is wired up.
+    var vb = document.getElementById('view-eink');
+    if (vb) { if (on) addClass(vb, 'on'); else removeClass(vb, 'on'); }
     store('attic.eink', on ? '1' : '');
     lastStatus = '';
     lastMinimap = '';
@@ -1514,11 +1525,17 @@
 
         // A share link should open already framed, not scrolled to a corner of
         // an empty grid. Once, after the first payload has been laid out.
-        if (viewOnly && !didFirstFit && countNotes()) {
-          didFirstFit = true;
-          setHTML(document.getElementById('view-title'),
-                  escapeHTML(meta.title || 'Shared wall'), null);
-          window.setTimeout(fitToContent, 60);
+        if (viewOnly && countNotes()) {
+          if (!didFirstFit) {
+            didFirstFit = true;
+            setHTML(document.getElementById('view-title'),
+                    escapeHTML(meta.title || 'Shared wall'), null);
+            window.setTimeout(fitToContent, 60);
+          } else if (fitted && data.notes.length) {
+            // Notes moved or arrived. A shared screen nobody is driving should
+            // re-frame itself rather than let new notes fall off the edge.
+            window.setTimeout(fitToContent, 60);
+          }
         }
       }
 
@@ -1551,6 +1568,17 @@
     document.getElementById('view-mono').onclick = function () {
       setMono(!hasClass(body, 'mono'));
     };
+
+    // Greyscale and e-ink are different things: greyscale is a filter over a
+    // normal screen, e-ink is a different visual system for e-paper hardware.
+    // A shared wall is exactly what you would leave on an e-paper panel, so
+    // the viewer gets its own switch rather than borrowing the toolbar's.
+    document.getElementById('view-eink').onclick = function () {
+      setEink(!einkOn);
+      // Borders replace fills, so the content box changes size; re-frame for it.
+      if (fitted) window.setTimeout(fitToContent, 60);
+    };
+
     if (store('attic.mono')) setMono(true);
 
     // Re-fit on rotation or resize: a shared wall is usually left open on a
