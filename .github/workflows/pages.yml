@@ -48,7 +48,12 @@ jobs:
           # Set ATTIC_CNAME here when a custom domain is ready, and add the
           # matching DNS record. Leaving it unset is correct until then.
 
+      # enablement turns Pages on via the API if it is not on already, which is
+      # otherwise a manual visit to Settings -> Pages before the first deploy
+      # can work at all. If this still fails, that setting is the thing to check.
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - uses: actions/upload-pages-artifact@v3
         with:
