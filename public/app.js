@@ -747,7 +747,7 @@
     });
   }
 
-  function deleteNote(id) {
+  function deleteNote(id, quiet) {
     if (viewOnly) return;
     var el = els[id];
     if (el && el.parentNode) el.parentNode.removeChild(el);
@@ -761,6 +761,20 @@
     }
     drawLinks();
     xhr('POST', '/api/note/delete', { id: id, wall: wallId }, function () {});
+
+    // Notes are tombstoned rather than removed, so undo is a flag flip. Offered
+    // rather than announced: deleting the wrong note on a shared wall used to be
+    // final, with nothing to press and no way back.
+    if (!quiet) {
+      toast('Note deleted', 8000, 'Undo', function () {
+        xhr('POST', '/api/note/restore', { id: id, wall: wallId }, function (err) {
+          if (err) { toast('Could not undo that'); return; }
+          // The next poll brings it back; ask for it immediately instead.
+          seq = -1;
+          toast('Note restored');
+        });
+      });
+    }
   }
 
   // ------------------------------------------------------------- dragging
@@ -994,7 +1008,7 @@
 
     // A note with nothing in it is not a note. This is what stops "+ note"
     // from littering the wall every time somebody changes their mind.
-    if (!text.replace(/^\s+|\s+$/g, '')) { deleteNote(id); return; }
+    if (!text.replace(/^\s+|\s+$/g, '')) { deleteNote(id, true); return; }
     if (text === n.text) return;
 
     n.text = text;
@@ -1009,7 +1023,7 @@
     hideEditor();
     // Escape on a note that was never given any text removes it, rather than
     // leaving the blank note the old modal used to leave behind.
-    if (n && !n.text.replace(/^\s+|\s+$/g, '')) deleteNote(id);
+    if (n && !n.text.replace(/^\s+|\s+$/g, '')) deleteNote(id, true);
   }
 
   document.getElementById('act-done').onclick = function () { commitEdit(); };
@@ -1303,15 +1317,18 @@
       (w.notes === 1 ? ' note' : ' notes') + '?\n\nThis cannot be undone.';
     if (!window.confirm(msg)) return;
 
-    xhr('POST', '/api/wall/delete', { wall: w.wall }, function (err) {
+    xhr('POST', '/api/wall/delete', { wall: w.wall }, function (err, data) {
       if (err) { toast('Could not delete that room'); return; }
+      var saved = data && data.backup
+        ? 'A copy was saved as ' + data.backup
+        : 'No backup could be written';
       if (w.wall === wallId) {
         // You just deleted the room you are standing in.
         window.location.href = '/';
         return;
       }
       refreshRoomList();
-      toast('Deleted ' + what);
+      toast('Deleted ' + what + '. ' + saved, 9000);
     });
   }
 
@@ -1551,13 +1568,26 @@
 
   var toastEl = null, toastTimer = null;
 
-  function toast(msg, ms) {
+  function toast(msg, ms, actionLabel, onAction) {
     if (!toastEl) {
       toastEl = document.createElement('div');
       toastEl.id = 'toast';
       body.appendChild(toastEl);
     }
     toastEl.innerHTML = escapeHTML(msg);
+
+    if (actionLabel) {
+      var btn = document.createElement('button');
+      btn.className = 'toast-action';
+      btn.type = 'button';
+      btn.innerHTML = escapeHTML(actionLabel);
+      btn.onclick = function () {
+        toastEl.style.display = 'none';
+        onAction();
+      };
+      toastEl.appendChild(btn);
+    }
+
     toastEl.style.display = 'block';
     if (toastTimer) window.clearTimeout(toastTimer);
     toastTimer = window.setTimeout(function () {

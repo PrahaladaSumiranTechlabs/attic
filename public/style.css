@@ -450,6 +450,22 @@ body.eink.kiosk #kiosk-exit {
   z-index: 3000;
 }
 
+.toast-action {
+  margin-left: 14px;
+  padding: 4px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #23211c;
+  background: #ffe89a;
+  border: 1px solid #c8a020;
+  border-radius: 14px;
+  cursor: pointer;
+}
+
+.toast-action:active { background: #f5d97f; }
+
+body.eink .toast-action { background: #fff; border: 2px solid #000; border-radius: 0; }
+
 body.eink #toast {
   background: #fff;
   color: #000;

@@ -315,7 +315,10 @@ streaming is exactly what old hardware cannot do.
 | --- | --- | --- |
 | `GET` | `/api/state?since=&wall=&id=&name=&vx=&vy=&vw=&vh=` | delta + presence heartbeat. `since=-1` for a full snapshot |
 | `POST` | `/api/note` | upsert. Accepts JSON or form-encoded |
-| `POST` | `/api/note/delete` | `{id, wall}` |
+| `POST` | `/api/note/delete` | `{id, wall}` — tombstone, recoverable |
+| `POST` | `/api/note/restore` | `{id, wall}` — undo, and revive its links |
+| `GET` | `/api/trash` | deleted rooms that can still be restored |
+| `POST` | `/api/wall/restore` | `{file}` — put a deleted room back |
 | `POST` | `/api/wall` | `{wall, title?, layout?, columns?}` — set name, layout, columns |
 | `POST` | `/api/wall/rename` | `{wall, title}` — renames **and moves** the room, leaving a forwarding address |
 | `POST` | `/api/wall/delete` | `{wall}` — hard-deletes the room's notes and config |
@@ -392,12 +395,28 @@ Hosted, multi-tenant Attic with real accounts is a separate thing, and it is
 available on request rather than as a product you sign up for — write to
 **hello@pstechlabs.com**.
 
+## Nothing is lost by accident
+
+Choosing not to have accounts does not license losing people's work, and with no
+audit trail there is nobody to ask what happened.
+
+- **Deleted notes are tombstones**, and deleting one offers **Undo** for eight
+  seconds. Restoring a note brings back the connections that died with it —
+  except any whose other end is still deleted, which would be a line to nothing.
+- **Deleting a room writes the whole room out first**, as plain JSON in an
+  `attic-trash` folder beside the database: notes, links, name and layout.
+  `GET /api/trash` lists them and `POST /api/wall/restore` puts one back. If the
+  address is occupied by then it restores under a suffixed name rather than
+  merging two unrelated walls together.
+- The backup is readable on its own. Somebody can rescue a room with a text
+  editor and no help from this app.
+
 ## Not built yet
 
 - **Accounts and private rooms.** Needed before hosting this for other people;
   see the security model above.
 - **Images and attachments.** Text notes only.
-- **Undo.**
+- **Undo for edits.** Deletes are recoverable; overwriting a note's text is not.
 
 ## Hosting and support
 

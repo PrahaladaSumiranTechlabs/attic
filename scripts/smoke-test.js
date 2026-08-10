@@ -186,6 +186,55 @@ async function waitForServer(tries = 60) {
     const sig = (r) => r.body.notes.map((n) => n.id + ':' + n.col + ':' + n.ord).sort().join('|');
     check('setting a title leaves the arrangement alone', sig(beforeRename) === sig(afterRename));
 
+    console.log('nothing is lost by accident');
+    await post('/api/note', { id: 'ua', wall: 'undo-wall', x: 10, y: 10, text: 'note A' });
+    await post('/api/note', { id: 'ub', wall: 'undo-wall', x: 300, y: 10, text: 'note B' });
+    await post('/api/link', { wall: 'undo-wall', a: 'ua', b: 'ub' });
+
+    await post('/api/note/delete', { id: 'ub', wall: 'undo-wall' });
+    const gone = await get('/api/state?since=-1&wall=undo-wall&id=smoke');
+    check('deleting a note takes its links with it',
+      gone.body.notes.filter((n) => !n.deleted).length === 1 && gone.body.links.length === 0);
+
+    const undo = await post('/api/note/restore', { id: 'ub', wall: 'undo-wall' });
+    check('a deleted note can be restored', undo.body.ok === true);
+    check('its links come back too', undo.body.links === 1);
+    const back = await get('/api/state?since=-1&wall=undo-wall&id=smoke');
+    check('the note and the link are both live again',
+      back.body.notes.filter((n) => !n.deleted).length === 2 && back.body.links.length === 1);
+
+    // A line to a note that is still deleted must not be revived.
+    await post('/api/note/delete', { id: 'ua', wall: 'undo-wall' });
+    await post('/api/note/delete', { id: 'ub', wall: 'undo-wall' });
+    const one = await post('/api/note/restore', { id: 'ub', wall: 'undo-wall' });
+    check('a link is not revived while its other end is deleted', one.body.links === 0);
+
+    const missing = await post('/api/note/restore', { id: 'never-existed', wall: 'undo-wall' });
+    check('restoring something that was never deleted is refused', missing.status === 404);
+
+    console.log('deleting a room keeps a copy');
+    await post('/api/note', { id: 'ra1', wall: 'trash-wall', x: 10, y: 10, text: 'do not lose me' });
+    await post('/api/wall', { wall: 'trash-wall', title: 'Precious' });
+    const binned = await post('/api/wall/delete', { wall: 'trash-wall' });
+    check('deleting a room writes a backup first', !!binned.body.backup, String(binned.body.backup));
+
+    const trash = await get('/api/trash');
+    const entry = trash.body.rooms.find((r) => r.wall === 'trash-wall');
+    check('the backup is listed', !!entry && entry.notes === 1 && entry.title === 'Precious');
+
+    const restored = await post('/api/wall/restore', { file: entry.file });
+    check('a deleted room can be restored', restored.body.ok === true && restored.body.notes === 1);
+    const room = await get('/api/state?since=-1&wall=trash-wall&id=smoke');
+    check('its notes and name survive the round trip',
+      room.body.meta.title === 'Precious' &&
+      room.body.notes.some((n) => n.text === 'do not lose me'));
+
+    // Restoring on top of a room that now has content would merge two
+    // unrelated walls, which is worse than an extra room.
+    const second = await post('/api/wall/restore', { file: entry.file });
+    check('restoring twice does not merge into the live room',
+      second.body.renamed === true && second.body.wall !== 'trash-wall', second.body.wall);
+
     console.log('read-only share links');
     await post('/api/note', { id: 'sa', wall: 'share-wall', x: 20, y: 20, text: 'shared note' });
     await post('/api/wall', { wall: 'share-wall', title: 'Shared Wall' });

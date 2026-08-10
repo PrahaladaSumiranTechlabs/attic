@@ -66,9 +66,9 @@ fills (grey fills ghost on partial refresh), and colour re-encoded as border
 The subtler fix: I had to stop the app repainting the status text every poll.
 Invisible waste on an LCD. On e-paper, a visible flash every 1.5 seconds.
 
-### Three bugs worth admitting to
+### Four bugs worth admitting to
 
-Building this, three failures taught me more than the features did.
+Building this, the failures taught me more than the features did.
 
 **The QR encoder.** I wrote one from scratch to avoid a dependency — it puts
 your machine's address on screen so a tablet can scan it instead of you typing
@@ -89,8 +89,17 @@ focus change. So the text box never blurred, the "currently editing" flag stayed
 set, and every subsequent drag bailed out early. One tap and nothing was
 draggable again.
 
+**A build guard that could not fail.** I wrote a check to catch links that would
+404 on the static site, asking "are any absolute paths left?" It could never
+fire: the rewrite strips every leading slash first, so an unhandled `/whatever`
+became a relative `whatever` and the check reported success while shipping a
+404. It passed a deliberately broken link.
+
 Each of those is now a test that exists because something broke, which is the
-only good reason for a test to exist.
+only good reason for a test to exist. Two of them only reproduce if you drive
+the real thing in its real shape — actual event sequences, and the packaged
+artifact rather than the source. My tests had been calling handlers directly,
+which passed cheerfully while the app was unusable.
 
 ### The honest limits
 
@@ -106,6 +115,14 @@ network, not a login screen. That is a deliberate trade, and it buys the thing
 the product exists for — a wall-mounted tablet comes up *showing the wall*, with
 no session expiring overnight and no password to type on a 2012 on-screen
 keyboard. Keep it on your LAN or behind a VPN. Do not port-forward it.
+
+The one place that stance was genuinely dangerous was deletion. With no accounts
+and no audit trail, one mistaken tap could destroy a whole room from a single
+confirm dialog. So deleted notes are now tombstones with an Undo button, and
+deleting a room writes the entire room to a JSON file beside the database before
+touching it — readable, restorable, and obvious enough that somebody could
+rescue it without this app's help. Choosing not to have accounts does not
+license losing people's work.
 
 ### Why this matters beyond one drawer
 
@@ -142,8 +159,9 @@ works — especially if it doesn't. That is the more useful bug report.
 > No build step.
 >
 > Along the way I wrote a QR encoder that produced perfect-looking, completely
-> unscannable codes, and shipped a desktop app whose server died at `require()`
-> while every CI check stayed green.
+> unscannable codes, shipped a desktop app whose server died at `require()`
+> while every CI check stayed green, and wrote a safety check that was
+> structurally incapable of failing.
 >
 > It also runs on e-readers, which turn out to be the same problem in a
 > different hat.

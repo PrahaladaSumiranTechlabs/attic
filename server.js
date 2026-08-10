@@ -198,6 +198,13 @@ const q = {
       AND ((a = ? AND b = ?) OR (a = ? AND b = ?))
   `),
   linkDelete: db.prepare(`UPDATE links SET deleted = 1, seq = ? WHERE id = ? AND wall = ?`),
+  restoreNote: db.prepare(`UPDATE notes SET deleted = 0, seq = ? WHERE id = ? AND wall = ?`),
+  deadNote: db.prepare(`SELECT * FROM notes WHERE id = ? AND wall = ? AND deleted = 1`),
+  noteAlive: db.prepare(`SELECT id FROM notes WHERE id = ? AND wall = ? AND deleted = 0`),
+  deadLinksFor: db.prepare(`
+    SELECT * FROM links WHERE wall = ? AND deleted = 1 AND (a = ? OR b = ?)
+  `),
+  restoreLink: db.prepare(`UPDATE links SET deleted = 0, seq = ? WHERE id = ?`),
   // A note that goes away takes its connections with it; a line to nothing is
   // worse than no line.
   linksForNote: db.prepare(`
@@ -260,6 +267,59 @@ function shareToken(slug) {
 }
 
 const DEFAULT_COLUMNS = ['To do', 'Doing', 'Done'];
+
+// Deleting a room is the only action in Attic that can destroy work outright:
+// there are no accounts, no audit trail, and anyone who can reach the server can
+// do it from one confirm dialog. So it writes the whole room out first. The file
+// is plain JSON next to the database — readable, restorable, and obvious enough
+// that somebody can rescue a room without this app's help.
+const TRASH_DIR = path.join(path.dirname(DB_PATH), 'attic-trash');
+
+function trashRoom(slug) {
+  const notes = q.live.all(slug).map(rowToNote);
+  const links = q.linksLive.all(slug).map((l) => ({ id: l.id, a: l.a, b: l.b }));
+  const meta = wallMeta(slug);
+
+  try {
+    fs.mkdirSync(TRASH_DIR, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const file = path.join(TRASH_DIR, slug + '--' + stamp + '.json');
+    fs.writeFileSync(file, JSON.stringify({
+      wall: slug, deletedAt: new Date().toISOString(), meta, notes, links,
+    }, null, 2));
+    return file;
+  } catch (e) {
+    // A read-only data directory should not make a room undeletable, but the
+    // caller needs to know the safety net was not there.
+    console.error('[attic] could not write the room backup:', e.message);
+    return null;
+  }
+}
+
+function listTrash() {
+  try {
+    return fs.readdirSync(TRASH_DIR)
+      .filter((f) => f.slice(-5) === '.json')
+      .map((f) => {
+        try {
+          const d = JSON.parse(fs.readFileSync(path.join(TRASH_DIR, f), 'utf8'));
+          return {
+            file: f,
+            wall: d.wall,
+            title: (d.meta && d.meta.title) || '',
+            deletedAt: d.deletedAt,
+            notes: (d.notes || []).length,
+          };
+        } catch (e) {
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .sort((a, b) => String(b.deletedAt).localeCompare(String(a.deletedAt)));
+  } catch (e) {
+    return [];
+  }
+}
 
 // Board geometry, mirroring the client's. Only used when converting a room
 // between layouts, so a board turned back into a free wall keeps the shape it
@@ -893,6 +953,9 @@ const server = http.createServer((req, res) => {
       const input = parseBody(raw, req.headers['content-type']);
       const wallId = cleanWall(input.wall);
       const removed = q.countLive.get(wallId).n;
+      // Write the room out before touching it. This is the only action here
+      // that destroys work outright, and it is one confirm dialog deep.
+      const backup = trashRoom(wallId);
       q.dropNotes.run(wallId);
       q.dropLinks.run(wallId);
       q.dropMeta.run(wallId);
@@ -900,7 +963,11 @@ const server = http.createServer((req, res) => {
       // as an empty room on the next visit.
       q.dropAliasesTo.run(wallId);
       for (const [id, peer] of peers) if (peer.wall === wallId) peers.delete(id);
-      sendJSON(res, 200, { ok: true, wall: wallId, removed, seq: nextSeq() });
+      sendJSON(res, 200, {
+        ok: true, wall: wallId, removed, seq: nextSeq(),
+        backup: backup ? path.basename(backup) : null,
+        backupPath: backup,
+      });
     });
     return;
   }
@@ -993,6 +1060,38 @@ const server = http.createServer((req, res) => {
       q.softDelete.run(seq, id, wallId);
       q.linksForNote.run(nextSeq(), wallId, id, id);
       sendJSON(res, 200, { ok: true, seq });
+    });
+    return;
+  }
+
+  // Undo for a deleted note. Notes are tombstoned rather than removed, so this
+  // is just flipping the flag back — and bringing along the connections that
+  // were only deleted because this note was.
+  if (p === '/api/note/restore' && req.method === 'POST') {
+    readBody(req, (raw) => {
+      const input = parseBody(raw, req.headers['content-type']);
+      const id = String(input.id || '');
+      const wallId = cleanWall(input.wall);
+
+      if (!q.deadNote.get(id, wallId)) {
+        sendJSON(res, 404, { ok: false, error: 'no deleted note with that id here' });
+        return;
+      }
+
+      const seq = nextSeq();
+      q.restoreNote.run(seq, id, wallId);
+
+      // Only links whose other end is still alive: restoring a line to a note
+      // that is itself deleted would put back a line to nothing.
+      let links = 0;
+      for (const l of q.deadLinksFor.all(wallId, id, id)) {
+        const other = l.a === id ? l.b : l.a;
+        if (!q.noteAlive.get(other, wallId)) continue;
+        q.restoreLink.run(nextSeq(), l.id);
+        links++;
+      }
+
+      sendJSON(res, 200, { ok: true, id, links, seq });
     });
     return;
   }
@@ -1159,6 +1258,57 @@ const server = http.createServer((req, res) => {
       walls: q.walls.all().length,
       notes: q.countAll.get().n,
       startedAt: STARTED_AT,
+    });
+    return;
+  }
+
+  if (p === '/api/trash' && req.method === 'GET') {
+    sendJSON(res, 200, { dir: TRASH_DIR, rooms: listTrash() });
+    return;
+  }
+
+  // Put a deleted room back. Restores under its own name when that is free, and
+  // under a suffixed one when it is not — quietly merging into whatever now
+  // lives at that address would be worse than an extra room.
+  if (p === '/api/wall/restore' && req.method === 'POST') {
+    readBody(req, (raw) => {
+      const input = parseBody(raw, req.headers['content-type']);
+      const file = path.basename(String(input.file || ''));
+      let data;
+      try {
+        data = JSON.parse(fs.readFileSync(path.join(TRASH_DIR, file), 'utf8'));
+      } catch (e) {
+        sendJSON(res, 404, { ok: false, error: 'no such backup' });
+        return;
+      }
+
+      let slug = cleanWall(data.wall);
+      let n = 2;
+      while ((q.countLive.get(slug).n > 0 || q.getMeta.get(slug)) && n < 50) {
+        slug = cleanWall(data.wall) + '-' + n;
+        n++;
+      }
+
+      for (const note of data.notes || []) {
+        writeNote(normalizeNote(note, nextSeq(), slug));
+      }
+      for (const l of data.links || []) {
+        const seq = nextSeq();
+        q.linkInsert.run('l' + seq + '-' + Math.floor(Math.random() * 1e6), slug, l.a, l.b, seq);
+      }
+      if (data.meta) {
+        saveMeta(slug, {
+          title: data.meta.title,
+          layout: data.meta.layout,
+          columns: data.meta.columns,
+        });
+      }
+
+      sendJSON(res, 200, {
+        ok: true, wall: slug, url: slug === DEFAULT_WALL ? '/' : '/' + slug,
+        notes: (data.notes || []).length,
+        renamed: slug !== cleanWall(data.wall),
+      });
     });
     return;
   }
