@@ -1,0 +1,39 @@
+name: site
+
+# The site is published by GitHub Pages branch deployment: index.html and its
+# assets are committed at the repository root, and Pages serves them directly.
+# There is no deploy step here — pushing to main is the deploy.
+#
+# What this does is guard the one hazard of committing build output: the copy in
+# git drifting from public/landing.html because somebody edited the page and
+# forgot to rebuild. Nothing else would notice.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'public/landing.html'
+      - 'public/favicon.svg'
+      - 'public/icon.png'
+      - 'scripts/build-site.js'
+      - 'index.html'
+      - '.github/workflows/site.yml'
+  pull_request:
+    paths:
+      - 'public/landing.html'
+      - 'index.html'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: The published site must match its source
+        run: node scripts/build-site.js --check

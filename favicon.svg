@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="11" fill="#f4f1ea"/>
+  <!-- A sticky note with a pitched roofline cut into its top edge: reads as a
+       note and as a house at 16px, which is the whole brand in one shape. -->
+  <g transform="rotate(-4 32 34)">
+    <path d="M12 51V27L32 12l20 15v24z"
+          fill="#ffe89a" stroke="#c8a020" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="M12 51V27L32 12v39z" fill="#ffdf7d" opacity=".55"/>
+    <rect x="20" y="33" width="24" height="3" rx="1.5" fill="#b8901a" opacity=".6"/>
+    <rect x="20" y="41" width="16" height="3" rx="1.5" fill="#b8901a" opacity=".6"/>
+  </g>
+</svg>
