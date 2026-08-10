@@ -166,7 +166,23 @@ async function waitForServer(tries = 60) {
     check('an unknown share link is refused', badToken.status === 404);
 
     const viewPage = await fetch(BASE + '/v/' + share.body.token);
-    check('the share URL serves the app', viewPage.status === 200);
+    check('the token share URL serves the app', viewPage.status === 200);
+
+    // The short form: /<room>/view, and bare /view for the default room.
+    check('a room view URL serves the app',
+      (await fetch(BASE + '/share-wall/view')).status === 200);
+    check('the bare view URL serves the app', (await fetch(BASE + '/view')).status === 200);
+
+    const byRoom = await get('/api/view?wall=share-wall&since=-1');
+    check('the view endpoint works by room name', byRoom.body.readOnly === true &&
+      byRoom.body.notes.some((n) => n.text === 'shared note'));
+    check('the short form keeps the room name it already shows',
+      byRoom.body.notes.every((n) => n.wall === 'share-wall'));
+
+    // Reserved names must be rejected at the API too, or they create rooms that
+    // exist in the database but that no URL can ever route to.
+    const reserved = await get('/api/state?since=-1&wall=view&id=smoke');
+    check('a reserved name cannot become a room', reserved.body.wallId === 'main');
 
     console.log('presence');
     await get('/api/state?since=-1&wall=main&id=peerX&name=tablet&vx=0&vy=0&vw=800&vh=600');

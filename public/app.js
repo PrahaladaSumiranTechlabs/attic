@@ -73,12 +73,20 @@
   var viewOnly = false;
   var viewToken = '';
 
-  var vm = window.location.pathname.match(/^\/v\/([a-z0-9]{6,32})\/?$/);
+  var path = window.location.pathname;
+  var vm = path.match(/^\/v\/([a-z0-9]{6,32})\/?$/);
+  var vw = path.match(/^\/(?:([a-z0-9][a-z0-9-]{0,47})\/)?view\/?$/);
+
   if (vm) {
+    // Token form: we are not told which room this is, and do not need to be.
     viewOnly = true;
     viewToken = vm[1];
+  } else if (vw) {
+    // Simple form: /kitchen/view, or bare /view for the default room.
+    viewOnly = true;
+    wallId = vw[1] || 'main';
   } else {
-    var m = window.location.pathname.match(/^\/(?:w\/)?([a-z0-9][a-z0-9-]{0,47})\/?$/);
+    var m = path.match(/^\/(?:w\/)?([a-z0-9][a-z0-9-]{0,47})\/?$/);
     if (m) wallId = m[1];
   }
 
@@ -1196,24 +1204,41 @@
   function shareEditable() {
     addClass(document.getElementById('share-edit'), 'on');
     removeClass(document.getElementById('share-view'), 'on');
+    removeClass(document.getElementById('share-alt'), 'shown');
     showShare(wallPath(),
       'Anyone who opens this can add and change notes.');
   }
 
+  // The short form by default, because a link you can say across a room beats
+  // a link you have to copy. The trade is that stripping "/view" off it gets
+  // you the editable room — hence the private option below it.
   function shareReadOnly() {
     removeClass(document.getElementById('share-edit'), 'on');
     addClass(document.getElementById('share-view'), 'on');
-    document.getElementById('share-url').innerHTML = 'making a view link&hellip;';
+    addClass(document.getElementById('share-alt'), 'shown');
+    document.getElementById('share-alt').innerHTML = 'or a link that hides the room name';
+    showShare(wallPath() === '/' ? '/view' : wallPath() + '/view',
+      'Opens read-only. Nothing can be changed from this link.');
+  }
+
+  function sharePrivateView() {
+    document.getElementById('share-url').innerHTML = 'making a private link&hellip;';
     document.getElementById('share-qr').innerHTML = '';
     xhr('POST', '/api/wall/share', { wall: wallId }, function (err, data) {
       if (err || !data || !data.url) {
         document.getElementById('share-url').innerHTML = 'could not create a view link';
         return;
       }
+      document.getElementById('share-alt').innerHTML = 'or the short link';
       showShare(data.url,
-        'Opens the wall read-only. Nothing on it can be changed from this link.');
+        'Read-only, and the room name is not in the link.');
     });
   }
+
+  document.getElementById('share-alt').onclick = function () {
+    if (/hides the room/.test(this.innerHTML)) sharePrivateView();
+    else shareReadOnly();
+  };
 
   document.getElementById('share').onclick = function () {
     sharebox.className = 'open';
@@ -1380,7 +1405,9 @@
 
   function poll() {
     var url = viewOnly
-      ? '/api/view?token=' + encodeURIComponent(viewToken) + '&since=' + seq +
+      ? '/api/view?since=' + seq +
+        (viewToken ? '&token=' + encodeURIComponent(viewToken)
+                   : '&wall=' + encodeURIComponent(wallId)) +
         '&_=' + new Date().getTime()
       : '/api/state?since=' + seq +
       '&wall=' + encodeURIComponent(wallId) +

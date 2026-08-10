@@ -49,8 +49,9 @@ The URL is the room.
 
 Rooms are fully isolated: notes and presence never cross between them. A room
 name may not contain a dot, which is what stops one shadowing a static file —
-every asset has an extension, no room does. A handful of names (`api`, `legacy`,
-`connect`, …) are reserved.
+every asset has an extension, no room does. Reserved names (`api`, `legacy`,
+`connect`, `view`, …) are rejected by the API as well as the router — accepting
+one would create a room that exists in the database but that no URL can reach.
 
 Tap the room chip in the toolbar to open the room panel. From there you can:
 
@@ -90,19 +91,38 @@ the old-device promise.
 
 ## Sharing a wall read-only
 
-**share → view only** mints a link like `/v/rdc85z8ix2j2dmk8zg4l49`. Opening it
-shows the wall with nothing to press: no toolbar, no minimap, no resize grips,
-no editing. It fits the content on load, re-fits on resize, and offers exactly
-two controls — **fit** and **greyscale**, the latter for a wall shown on a
-projector or a monochrome panel.
+Add `/view` to any room:
 
-The viewer polls `/api/view?token=…`, which is addressed **by token and never by
-room name**, and the payload has the room slug stripped out of it — including
-the `wall` field that every note carries in the ordinary API. Without the slug a
-viewer cannot turn a view link into a write by calling the normal API.
+```
+http://192.168.0.189:8080/kitchen/view     one room, read-only
+http://192.168.0.189:8080/view             the default room, read-only
+```
 
-**This restricts, it does not secure.** Attic has no accounts, so anyone who can
-reach the server and guess a room name can still edit it. A share link stops
+Opening it shows the wall with nothing to press: no toolbar, no minimap, no
+resize grips, no editing. It fits the content on load, re-fits on resize, and
+offers exactly two controls — **fit** and **greyscale**, the latter for a wall
+shown on a projector or a monochrome panel.
+
+**share → view only** shows this link with its QR.
+
+### The private form
+
+The short link has an obvious property: strip `/view` off it and you have the
+editable room. That is usually fine — everyone on your LAN can reach every room
+anyway — but when the room name itself should not travel with the link, **share
+→ view only → "a link that hides the room name"** mints a token form instead:
+
+```
+http://192.168.0.189:8080/v/rdc85z8ix2j2dmk8zg4l49
+```
+
+That one is addressed by token and never by room name, and the payload has the
+slug stripped out of it — including the `wall` field that every note carries in
+the ordinary API. Without the slug, a viewer cannot turn a view link into a
+write by calling the normal API.
+
+**Both restrict, neither secures.** Attic has no accounts, so anyone who can
+reach the server and guess a room name can still edit it. A view link stops
 being an editing link; it does not make an unauthenticated server safe to
 expose. See the security model below.
 
@@ -268,7 +288,8 @@ streaming is exactly what old hardware cannot do.
 | `POST` | `/api/wall/delete` | `{wall}` — hard-deletes the room's notes and config |
 | `POST` | `/api/wall/new` | mints an unused slug |
 | `POST` | `/api/wall/share` | mints (or returns) the room's read-only token |
-| `GET` | `/api/view?token=&since=` | read-only state, addressed by token, room slug stripped |
+| `GET` | `/api/view?wall=&since=` | read-only state for a room (`/<room>/view`) |
+| `GET` | `/api/view?token=&since=` | read-only state by token, room slug stripped (`/v/<token>`) |
 | `POST` | `/api/link` | `{wall, a, b}` — connect two notes |
 | `POST` | `/api/link/delete` | `{wall, id}` |
 | `GET` | `/api/walls` | rooms with note counts, names and layouts |

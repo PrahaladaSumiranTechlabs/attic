@@ -911,6 +911,23 @@ body.mono #wall { -webkit-filter: grayscale(100%); filter: grayscale(100%); }
 
 #share-mode button.on { background: #ffe89a; border-color: #c8a020; color: #6b530f; font-weight: bold; }
 
+/* Only offered once you are looking at a view link. */
+#share-alt { display: none; }
+
+#share-alt.shown {
+  display: block;
+  margin: 0 auto 12px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 12px;
+  color: #9a9384;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+body.eink #share-alt.shown { color: #000; }
+
 body.eink #viewbar, body.eink #share-mode button {
   background: #fff;
   border: 2px solid #000;

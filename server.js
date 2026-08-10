@@ -267,9 +267,12 @@ const RESERVED = new Set([
   'connect', 'qr', 'support', 'help', 'v', 'view', 'share',
 ]);
 
+// Reserved names are rejected here, not only in the router. Accepting them
+// would create rooms that exist in the database but that no URL can ever reach,
+// because the router resolves those paths to something else.
 function cleanWall(v) {
   const s = String(v || '').toLowerCase();
-  return WALL_RE.test(s) ? s : DEFAULT_WALL;
+  return WALL_RE.test(s) && !RESERVED.has(s) ? s : DEFAULT_WALL;
 }
 
 // Three words beat eight random characters: a wall slug gets read aloud across
@@ -597,29 +600,44 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // The read-only counterpart of /api/state. Deliberately returns no room slug
-  // and takes no presence heartbeat: a viewer is a spectator, not a peer.
+  // The read-only counterpart of /api/state. Takes no presence heartbeat: a
+  // viewer is a spectator, not a peer.
+  //
+  // Addressed either by room (/kitchen/view — short enough to say out loud) or
+  // by token (/v/<token> — when the room name itself should not travel with the
+  // link). Reads were never restricted anyway; what this endpoint does is serve
+  // a client that cannot write.
   if (p === '/api/view' && req.method === 'GET') {
-    const row = q.byToken.get(String(u.searchParams.get('token') || ''));
-    if (!row) {
-      sendJSON(res, 404, { ok: false, error: 'unknown or revoked share link' });
-      return;
+    const token = String(u.searchParams.get('token') || '');
+    let slug;
+
+    if (token) {
+      const row = q.byToken.get(token);
+      if (!row) {
+        sendJSON(res, 404, { ok: false, error: 'unknown or revoked share link' });
+        return;
+      }
+      slug = row.wall;
+    } else {
+      slug = cleanWall(u.searchParams.get('wall'));
     }
+
     const since = clampInt(u.searchParams.get('since'), -1, 2 ** 31, -1);
-    const slug = row.wall;
     const meta = wallMeta(slug);
 
     sendJSON(res, 200, {
       seq: q.getSeq.get().v,
       full: since < 0,
       readOnly: true,
-      // Name and layout, but never the address. Every note carries its room in
-      // the ordinary API, so it has to come off here — otherwise the viewer
-      // learns the slug from the payload and the token protects nothing.
+      // Name and layout. The address is withheld only for token links, where
+      // the whole point is that the room name does not travel with the link —
+      // every note carries its room in the ordinary API, so it has to come off
+      // here or the payload hands back what the token withheld. For /<room>/view
+      // the slug is already in the URL and there is nothing to hide.
       meta: { title: meta.title, layout: meta.layout, columns: meta.columns },
       notes: (since < 0 ? q.live.all(slug) : q.since.all(slug, since)).map((r) => {
         const n = rowToNote(r);
-        delete n.wall;
+        if (token) delete n.wall;
         return n;
       }),
       links: (since < 0 ? q.linksLive.all(slug) : q.linksSince.all(slug, since))
@@ -920,9 +938,11 @@ const server = http.createServer((req, res) => {
   //
   // A room name may not contain a dot, which is what keeps this from shadowing
   // static files: every asset has an extension, no room does.
-  // Read-only share links. The client reads the token from the URL and polls
-  // /api/view with it.
-  if (/^\/v\/[a-z0-9]{6,32}\/?$/.test(p)) {
+  // Read-only views. /view is the default room, /<room>/view is any other, and
+  // /v/<token> is the form that keeps the room name out of the link.
+  if (p === '/view' || p === '/view/' ||
+      /^\/[a-z0-9][a-z0-9-]{0,47}\/view\/?$/.test(p) ||
+      /^\/v\/[a-z0-9]{6,32}\/?$/.test(p)) {
     serveStatic(res, '/index.html');
     return;
   }
