@@ -1025,6 +1025,9 @@
   // Capture phase, so it runs before the note's own handler and the drag it
   // starts sees editingId already cleared.
   function commitOnOutsidePress(e) {
+    // Belt and braces: a press starting outside the action bar means no action
+    // press is in flight, whatever happened to the last mouseup.
+    pressingActions = false;
     if (!editingId) return;
     var t = e.target;
     if (t === inlineTA) return;
@@ -1060,12 +1063,14 @@
 
   // ------------------------------------------------------------ new notes
 
-  function addNote() {
-    // Drop it near the middle of whatever you are currently looking at, with a
-    // small jitter so repeated taps do not stack notes perfectly on top.
+  function addNote(atX, atY) {
+    // With no position given, drop it near the middle of whatever you are
+    // looking at, with a small jitter so repeated taps do not stack notes
+    // perfectly on top of one another.
     var jitter = function () { return Math.floor(Math.random() * 60) - 30; };
-    var cx = toWallX(viewW() / 2) - NOTE_W / 2 + jitter();
-    var cy = toWallY(viewH() / 2) - NOTE_H / 2 + jitter();
+    var placed = atX !== undefined && atY !== undefined;
+    var cx = placed ? atX : toWallX(viewW() / 2) - NOTE_W / 2 + jitter();
+    var cy = placed ? atY : toWallY(viewH() / 2) - NOTE_H / 2 + jitter();
     var n = {
       id: 'n' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36),
       x: Math.round(Math.max(0, Math.min(wallW - NOTE_W, cx))),
@@ -1075,10 +1080,98 @@
     };
     saveNote(n);
     openEditor(n.id);
+    return n.id;
   }
 
-  document.getElementById('add').onclick = addNote;
-  document.getElementById('kiosk-add').onclick = addNote;
+  document.getElementById('add').onclick = function () { addNote(); };
+  document.getElementById('kiosk-add').onclick = function () { addNote(); };
+
+  // Write where you are looking.
+  //
+  // "+ note" always drops a note in the middle of the view, which is the wrong
+  // place about as often as it is right. Double-clicking the board puts one
+  // exactly where you pointed and opens it for typing — the same gesture you
+  // would use on any canvas.
+  function addNoteAt(clientX, clientY) {
+    if (viewOnly || kioskOn || linking) return;
+
+    if (isKanban()) {
+      // On a board there is no free space to drop into: a card belongs to a
+      // column, so it joins the one you pointed at, at the end.
+      var t = dropTarget(clientX, clientY, null);
+      var n = {
+        id: 'n' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36),
+        x: 0, y: 0, w: NOTE_W, h: NOTE_H,
+        text: '', color: myColor, author: myName,
+        col: t.column, ord: t.siblings.length
+      };
+      saveNote(n);
+      openEditor(n.id);
+      return;
+    }
+
+    addNote(toWallX(clientX) - NOTE_W / 2, toWallY(clientY) - NOTE_H / 2);
+  }
+
+  canvas.addEventListener('dblclick', function (e) {
+    // Double-clicking a note is for reading it, not for making another.
+    var node = e.target;
+    while (node && node !== canvas) {
+      if (node.getAttribute && node.getAttribute('data-note')) return;
+      node = node.parentNode;
+    }
+    addNoteAt(e.clientX, e.clientY);
+  }, false);
+
+  // Touch has no dblclick, so recognise a double tap: two taps close together
+  // in time and place. Anything looser fires while somebody is panning.
+  (function () {
+    var lastAt = 0, lastX = 0, lastY = 0;
+    canvas.addEventListener('touchend', function (e) {
+      if (viewOnly || kioskOn || editingId) return;
+      var t = (e.changedTouches && e.changedTouches[0]) || null;
+      if (!t) return;
+
+      var node = e.target;
+      while (node && node !== canvas) {
+        if (node.getAttribute && node.getAttribute('data-note')) return;
+        node = node.parentNode;
+      }
+
+      var now = new Date().getTime();
+      if (now - lastAt < 380 &&
+          Math.abs(t.clientX - lastX) < 26 && Math.abs(t.clientY - lastY) < 26) {
+        lastAt = 0;
+        addNoteAt(t.clientX, t.clientY);
+        if (e.preventDefault) e.preventDefault();
+        return;
+      }
+      lastAt = now; lastX = t.clientX; lastY = t.clientY;
+    }, false);
+  })();
+
+  // Just start typing. With nothing else focused, a printable key means you
+  // want a note, so make one and let the keystroke land in it rather than
+  // discarding it and making you type the first letter twice.
+  document.addEventListener('keypress', function (e) {
+    if (viewOnly || kioskOn || editingId || linking) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    var t = e.target;
+    var tag = t && t.tagName ? t.tagName.toUpperCase() : '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'BUTTON') return;
+
+    var code = e.which || e.keyCode;
+    if (!code || code < 32) return; // control keys are not the start of a note
+
+    var ch = String.fromCharCode(code);
+    var id = addNoteAt(viewW() / 2, viewH() / 2) || editingId;
+    if (id && inlineTA) {
+      inlineTA.value = ch;
+      try { inlineTA.setSelectionRange(1, 1); } catch (err) {}
+    }
+    if (e.preventDefault) e.preventDefault();
+  }, false);
 
   function buildSwatches() {
     swatchWrap.innerHTML = '';

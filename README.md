@@ -68,6 +68,16 @@ Tap the room chip in the toolbar to open the room panel. From there you can:
 
 ## Writing a note
 
+**Double-click the board to write where you are looking.** "+ note" drops one in
+the middle of the view, which is the wrong place about as often as it is right;
+double-clicking puts a note exactly where you pointed and opens it for typing.
+Double-tap does the same on a touchscreen. On a board there is no free space to
+drop into, so the note joins the column you pointed at, at the end.
+
+**Or just start typing.** With nothing else focused, a printable key means you
+want a note, so one appears and the keystroke lands in it — no typing the first
+letter twice.
+
 You type **in** the note, not in a dialog about it. Tap a note and a textarea
 appears over it, matching its size and colour; a small action bar beside it
 offers link, colour, delete and done. Click anywhere else to finish — the same
