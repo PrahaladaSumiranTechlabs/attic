@@ -45,33 +45,30 @@ const TEMPLATES = {
   },
   kanban: {
     label: 'Kanban',
-    blurb: 'To do / Doing / Done.',
+    blurb: 'Real columns. Cards belong to one.',
+    layout: 'kanban',
+    columns: ['To do', 'Doing', 'Done'],
     notes: [
-      { x: 60, y: 90, w: 320, h: 64, color: 'pink', text: 'To do' },
-      { x: 420, y: 90, w: 320, h: 64, color: 'blue', text: 'Doing' },
-      { x: 780, y: 90, w: 320, h: 64, color: 'green', text: 'Done' },
-      { x: 60, y: 174, w: 200, h: 150, color: 'yellow', text: 'Drag me to the next column.' },
+      { col: 'To do', ord: 0, color: 'yellow', text: 'Drag me into the next column.' },
+      { col: 'To do', ord: 1, color: 'yellow', text: 'Cards stack in their column and stay there.' },
+      { col: 'Doing', ord: 0, color: 'blue', text: 'Drop a card between two others to reorder it.' },
     ],
   },
   retro: {
     label: 'Retro',
-    blurb: 'What worked, what did not, what next.',
+    blurb: 'Columns: went well, did not, next.',
+    layout: 'kanban',
+    columns: ['Went well', "Didn't go well", 'Try next time'],
     notes: [
-      { x: 60, y: 90, w: 320, h: 64, color: 'green', text: 'Went well' },
-      { x: 420, y: 90, w: 320, h: 64, color: 'pink', text: "Didn't go well" },
-      { x: 780, y: 90, w: 320, h: 64, color: 'blue', text: 'Try next time' },
+      { col: 'Went well', ord: 0, color: 'green', text: 'Shipping felt quick this week.' },
     ],
   },
   week: {
     label: 'Week',
-    blurb: 'Five columns, one per weekday.',
-    notes: [
-      { x: 60, y: 90, w: 230, h: 56, color: 'orange', text: 'Monday' },
-      { x: 320, y: 90, w: 230, h: 56, color: 'orange', text: 'Tuesday' },
-      { x: 580, y: 90, w: 230, h: 56, color: 'orange', text: 'Wednesday' },
-      { x: 840, y: 90, w: 230, h: 56, color: 'orange', text: 'Thursday' },
-      { x: 1100, y: 90, w: 230, h: 56, color: 'orange', text: 'Friday' },
-    ],
+    blurb: 'A column per weekday.',
+    layout: 'kanban',
+    columns: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+    notes: [],
   },
 };
 
@@ -96,6 +93,16 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS notes_seq ON notes(seq);
   CREATE TABLE IF NOT EXISTS state (k TEXT PRIMARY KEY, v INTEGER NOT NULL);
   INSERT OR IGNORE INTO state (k, v) VALUES ('seq', 0);
+
+  -- A room only needs a row here once it has a name or a layout; rooms still
+  -- come into being by being visited, and an unconfigured one has no row.
+  CREATE TABLE IF NOT EXISTS walls (
+    wall    TEXT PRIMARY KEY,
+    title   TEXT NOT NULL DEFAULT '',
+    layout  TEXT NOT NULL DEFAULT 'free',
+    columns TEXT NOT NULL DEFAULT '[]',
+    seq     INTEGER NOT NULL DEFAULT 0
+  );
 `);
 
 // Databases created before walls existed have no `wall` column. Add it rather
@@ -107,6 +114,13 @@ const cols = db.prepare(`PRAGMA table_info(notes)`).all().map((c) => c.name);
 if (cols.indexOf('wall') === -1) {
   db.exec(`ALTER TABLE notes ADD COLUMN wall TEXT NOT NULL DEFAULT 'main'`);
   console.log('migrated: existing notes moved to wall "main"');
+}
+// Kanban placement. Freeform notes keep using x/y and leave these alone, so one
+// table serves both layouts and a room can switch without losing anything.
+if (cols.indexOf('col') === -1) {
+  db.exec(`ALTER TABLE notes ADD COLUMN col TEXT NOT NULL DEFAULT ''`);
+  db.exec(`ALTER TABLE notes ADD COLUMN ord INTEGER NOT NULL DEFAULT 0`);
+  console.log('migrated: notes gained column placement');
 }
 
 db.exec(`CREATE INDEX IF NOT EXISTS notes_wall ON notes(wall, seq)`);
@@ -126,15 +140,58 @@ const q = {
     FROM notes WHERE deleted = 0 GROUP BY wall ORDER BY seq DESC
   `),
   upsert: db.prepare(`
-    INSERT INTO notes (id, wall, x, y, w, h, text, color, author, seq, deleted)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+    INSERT INTO notes (id, wall, x, y, w, h, text, color, author, col, ord, seq, deleted)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     ON CONFLICT(id) DO UPDATE SET
       x = excluded.x, y = excluded.y, w = excluded.w, h = excluded.h,
       text = excluded.text, color = excluded.color, author = excluded.author,
+      col = excluded.col, ord = excluded.ord,
       seq = excluded.seq, deleted = 0
   `),
   softDelete: db.prepare(`UPDATE notes SET deleted = 1, seq = ? WHERE id = ? AND wall = ?`),
+
+  getMeta: db.prepare(`SELECT * FROM walls WHERE wall = ?`),
+  setMeta: db.prepare(`
+    INSERT INTO walls (wall, title, layout, columns, seq)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(wall) DO UPDATE SET
+      title = excluded.title, layout = excluded.layout,
+      columns = excluded.columns, seq = excluded.seq
+  `),
+  allMeta: db.prepare(`SELECT * FROM walls`),
+  dropNotes: db.prepare(`DELETE FROM notes WHERE wall = ?`),
+  dropMeta: db.prepare(`DELETE FROM walls WHERE wall = ?`),
 };
+
+const DEFAULT_COLUMNS = ['To do', 'Doing', 'Done'];
+
+function wallMeta(slug) {
+  const row = q.getMeta.get(slug);
+  if (!row) return { wall: slug, title: '', layout: 'free', columns: [], seq: 0 };
+  let columns = [];
+  try { columns = JSON.parse(row.columns); } catch (e) { columns = []; }
+  return {
+    wall: row.wall,
+    title: row.title,
+    layout: row.layout === 'kanban' ? 'kanban' : 'free',
+    columns: Array.isArray(columns) ? columns : [],
+    seq: row.seq,
+  };
+}
+
+function saveMeta(slug, patch) {
+  const cur = wallMeta(slug);
+  const next = {
+    title: patch.title === undefined ? cur.title : String(patch.title).slice(0, 60),
+    layout: patch.layout === undefined ? cur.layout : (patch.layout === 'kanban' ? 'kanban' : 'free'),
+    columns: patch.columns === undefined ? cur.columns
+      : (Array.isArray(patch.columns) ? patch.columns : cur.columns)
+        .slice(0, 8).map((c) => String(c).slice(0, 40)),
+  };
+  const seq = nextSeq();
+  q.setMeta.run(slug, next.title, next.layout, JSON.stringify(next.columns), seq);
+  return Object.assign({ wall: slug, seq }, next);
+}
 
 // ------------------------------------------------------------------ walls
 
@@ -281,8 +338,16 @@ function normalizeNote(input, seq, wall) {
     text: String(input.text == null ? '' : input.text).slice(0, 4000),
     color: COLORS.indexOf(input.color) === -1 ? 'yellow' : input.color,
     author: String(input.author || '').slice(0, 40),
+    col: String(input.col == null ? '' : input.col).slice(0, 40),
+    ord: clampInt(input.ord, 0, 100000, 0),
     seq,
   };
+}
+
+// One place to write a note, so the column arguments cannot drift out of sync
+// between the four callers that create them.
+function writeNote(n) {
+  q.upsert.run(n.id, n.wall, n.x, n.y, n.w, n.h, n.text, n.color, n.author, n.col, n.ord, n.seq);
 }
 
 function rowToNote(r) {
@@ -296,6 +361,8 @@ function rowToNote(r) {
     text: r.text,
     color: r.color,
     author: r.author,
+    col: r.col || '',
+    ord: r.ord || 0,
     seq: r.seq,
     deleted: !!r.deleted,
   };
@@ -444,10 +511,48 @@ const server = http.createServer((req, res) => {
       seq: q.getSeq.get().v,
       full: since < 0,
       wallId,
+      // Sent every poll rather than on change: it is a few dozen bytes, and it
+      // means a client that joins mid-session never renders the wrong layout.
+      meta: wallMeta(wallId),
       notes: rows.map(rowToNote),
       peers: livePeers(me, wallId),
       wall: { w: WALL_W, h: WALL_H },
       colors: COLORS,
+      columnPresets: DEFAULT_COLUMNS,
+    });
+    return;
+  }
+
+  // Rename a room, switch its layout, or edit its columns.
+  if (p === '/api/wall' && req.method === 'POST') {
+    readBody(req, (raw) => {
+      const input = parseBody(raw, req.headers['content-type']);
+      const wallId = cleanWall(input.wall);
+      let columns = input.columns;
+      if (typeof columns === 'string') {
+        try { columns = JSON.parse(columns); } catch (e) { columns = undefined; }
+      }
+      sendJSON(res, 200, { ok: true, meta: saveMeta(wallId, {
+        title: input.title,
+        layout: input.layout,
+        columns,
+      }) });
+    });
+    return;
+  }
+
+  // Deleting a room is a hard delete, not a tombstone: there is no client that
+  // needs to hear about a room it can no longer open, and leaving the notes
+  // behind would quietly resurrect them if the name were reused.
+  if (p === '/api/wall/delete' && req.method === 'POST') {
+    readBody(req, (raw) => {
+      const input = parseBody(raw, req.headers['content-type']);
+      const wallId = cleanWall(input.wall);
+      const removed = q.countLive.get(wallId).n;
+      q.dropNotes.run(wallId);
+      q.dropMeta.run(wallId);
+      for (const [id, peer] of peers) if (peer.wall === wallId) peers.delete(id);
+      sendJSON(res, 200, { ok: true, wall: wallId, removed, seq: nextSeq() });
     });
     return;
   }
@@ -462,7 +567,21 @@ const server = http.createServer((req, res) => {
   }
 
   if (p === '/api/walls' && req.method === 'GET') {
-    sendJSON(res, 200, { walls: q.walls.all() });
+    // Rooms with notes, plus any that exist only as configuration — a freshly
+    // named or freshly templated room has metadata before it has content.
+    const byName = new Map();
+    for (const row of q.walls.all()) {
+      byName.set(row.wall, { wall: row.wall, notes: row.notes, seq: row.seq });
+    }
+    for (const row of q.allMeta.all()) {
+      const cur = byName.get(row.wall) || { wall: row.wall, notes: 0, seq: row.seq };
+      const meta = wallMeta(row.wall);
+      byName.set(row.wall, Object.assign(cur, {
+        title: meta.title, layout: meta.layout, columns: meta.columns,
+      }));
+    }
+    const walls = [...byName.values()].sort((a, b) => (b.seq || 0) - (a.seq || 0));
+    sendJSON(res, 200, { walls });
     return;
   }
 
@@ -488,13 +607,20 @@ const server = http.createServer((req, res) => {
       }
       const wallId = cleanWall(input.wall);
       const author = String(input.author || '').slice(0, 40);
-      let seq = 0;
+
+      // A template that declares columns also switches the room's layout —
+      // otherwise "Kanban" would just be some notes shaped like a kanban.
+      const meta = saveMeta(wallId, {
+        layout: t.layout || 'free',
+        columns: t.columns || [],
+      });
+
+      let seq = meta.seq;
       t.notes.forEach((spec) => {
         seq = nextSeq();
-        const n = normalizeNote(Object.assign({}, spec, { author }), seq, wallId);
-        q.upsert.run(n.id, n.wall, n.x, n.y, n.w, n.h, n.text, n.color, n.author, n.seq);
+        writeNote(normalizeNote(Object.assign({}, spec, { author }), seq, wallId));
       });
-      sendJSON(res, 200, { ok: true, seq, added: t.notes.length });
+      sendJSON(res, 200, { ok: true, seq, added: t.notes.length, meta });
     });
     return;
   }
@@ -504,7 +630,7 @@ const server = http.createServer((req, res) => {
       const input = parseBody(raw, req.headers['content-type']);
       const seq = nextSeq();
       const n = normalizeNote(input, seq, input.wall);
-      q.upsert.run(n.id, n.wall, n.x, n.y, n.w, n.h, n.text, n.color, n.author, n.seq);
+      writeNote(n);
       sendJSON(res, 200, { ok: true, note: n, seq });
     });
     return;
@@ -534,7 +660,7 @@ const server = http.createServer((req, res) => {
       if (String(input.text || '').trim()) {
         const seq = nextSeq();
         const n = normalizeNote(input, seq, wallId);
-        q.upsert.run(n.id, n.wall, n.x, n.y, n.w, n.h, n.text, n.color, n.author, n.seq);
+        writeNote(n);
       }
       res.writeHead(302, { Location: '/legacy?w=' + encodeURIComponent(wallId) }).end();
     });

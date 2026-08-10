@@ -18,6 +18,12 @@ body {
 
 #canvas { position: relative; }
 
+/* While fitted, everything is on screen by construction, so nothing should
+   scroll. Without this the wall — a 4000px-wide absolutely positioned child —
+   overflows the smaller fitted canvas and the page scrolls sideways into
+   empty space. */
+body.fitted, body.fitted #canvas { overflow: hidden; }
+
 /* Grab-to-pan on the empty board, the way an infinite canvas is expected to
    behave. Mouse only: on touch, native scrolling already does this better and
    with momentum. */
@@ -517,6 +523,51 @@ body.eink #kiosk-add {
 
 body.eink #overview-hint { background: #fff; color: #000; border-top: 2px solid #000; }
 
+/* --------------------------------------------------------------- kanban */
+/* Columns are structural, not decorative: a card belongs to one, and the lane
+   decides where it sits. Still plain positioned divs. */
+
+body.board #wall { background-image: none; }
+
+.lane {
+  position: absolute;
+  top: 0;
+  background: rgba(0, 0, 0, 0.032);
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  border-radius: 8px;
+}
+
+.lane-head {
+  padding: 15px 16px 0;
+  font-size: 14px;
+  font-weight: bold;
+  letter-spacing: 0.02em;
+  color: #6f6a5e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lane-count {
+  float: right;
+  font-weight: normal;
+  font-size: 12px;
+  color: #a9a294;
+}
+
+/* On a board a card is sized by its column and its content, so the manual
+   resize grip would be lying about what it controls. */
+body.board .note-grip { display: none; }
+body.board .note { min-height: 54px; }
+
+body.eink .lane {
+  background: #fff;
+  border: 2px solid #000;
+  border-radius: 0;
+}
+
+body.eink .lane-head, body.eink .lane-count { color: #000; }
+
 /* ---------------------------------------------------------------- rooms */
 
 #roombox {
@@ -536,7 +587,73 @@ body.eink #overview-hint { background: #fff; color: #000; border-top: 2px solid 
 }
 
 #roombox.open { display: block; }
-#roombox h2 { margin: 0 0 12px; font-size: 16px; }
+#roombox h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: #9a9384; }
+#roombox h2 + * { margin-top: 0; }
+
+#room-this { margin-bottom: 20px; }
+
+#room-title {
+  width: 208px;
+  font-size: 15px;
+  padding: 7px 9px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-family: inherit;
+}
+
+#room-rename {
+  font-size: 15px;
+  padding: 7px 14px;
+  margin-left: 6px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+
+#room-layout { margin-top: 10px; font-size: 12px; color: #999; }
+
+#room-layout button {
+  font-size: 13px;
+  padding: 5px 11px;
+  margin-left: 5px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  color: #444;
+  cursor: pointer;
+}
+
+#room-layout button.on { background: #ffe89a; border-color: #c8a020; font-weight: bold; }
+
+.room-del {
+  float: right;
+  width: 22px;
+  height: 22px;
+  margin-left: 8px;
+  padding: 0;
+  line-height: 18px;
+  font-size: 16px;
+  color: #c09090;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.room:hover .room-del { border-color: #e6cccc; color: #b03030; }
+.room-del:hover { background: #fbeaea; }
+.room .slug { color: #aaa; font-weight: normal; font-size: 12px; }
+
+body.eink #room-title, body.eink #room-rename, body.eink #room-layout button {
+  border: 2px solid #000;
+  border-radius: 0;
+  color: #000;
+}
+
+body.eink #room-layout button.on { background: #000; color: #fff; }
+body.eink #roombox h2, body.eink .room .slug { color: #000; }
 
 #room-list {
   max-height: 210px;

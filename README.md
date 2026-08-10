@@ -52,6 +52,48 @@ name may not contain a dot, which is what stops one shadowing a static file —
 every asset has an extension, no room does. A handful of names (`api`, `legacy`,
 `connect`, …) are reserved.
 
+Tap the room chip in the toolbar to open the room panel. From there you can:
+
+- **Give the room a name.** The address stays a slug (`/sprint`); the name can
+  be anything (`Sprint 14 Board`) and is what the chip and the room list show.
+- **Switch layout** between a free wall and columns, and edit the column names.
+- **See every room** on the server with its note count, and switch between them.
+- **Delete a room.** This is a hard delete of its notes and its configuration,
+  confirmed by name and note count rather than a bare "are you sure".
+
+## Free wall or columns
+
+A room is one of two things, and can be switched at any time without losing
+anything:
+
+**Free wall** — notes go anywhere, they keep `x`/`y`, you pan and zoom around.
+
+**Columns** — a real board, not notes arranged to look like one. A card *belongs
+to* a column and carries `col`/`ord` instead of coordinates; the column decides
+where it sits; dropping a card elsewhere changes which column owns it and
+renumbers the destination. Cards are sized by their content, and the manual
+resize grip is hidden because the column owns the geometry.
+
+Both layouts share one `notes` table. Freeform notes leave `col`/`ord` alone and
+cards leave `x`/`y` alone, so switching a room back and forth loses nothing. A
+card whose column was renamed or removed shows up in the first column rather
+than vanishing, and is only rewritten when somebody actually moves it.
+
+The **Kanban**, **Retro** and **Week** templates all set the layout and the
+columns — a template that only *looked* like a kanban was the thing worth
+fixing.
+
+## Fit
+
+**fit** frames what is actually on the wall, not the wall. Two things this has
+to get right, both of which were wrong first:
+
+- It **centres** the content. Scroll position clamps at zero, so content smaller
+  than the viewport can never be centred by scrolling — the wall is translated
+  instead.
+- It **clips** while fitted. The wall is a 4000px-wide absolutely positioned
+  element; without clipping, the page scrolls sideways into empty space.
+
 ## Connecting a device
 
 Typing an IP address into an old tablet is the worst part of self-hosting, so
@@ -177,8 +219,10 @@ streaming is exactly what old hardware cannot do.
 | `GET` | `/api/state?since=&wall=&id=&name=&vx=&vy=&vw=&vh=` | delta + presence heartbeat. `since=-1` for a full snapshot |
 | `POST` | `/api/note` | upsert. Accepts JSON or form-encoded |
 | `POST` | `/api/note/delete` | `{id, wall}` |
+| `POST` | `/api/wall` | `{wall, title?, layout?, columns?}` — rename, switch layout, set columns |
+| `POST` | `/api/wall/delete` | `{wall}` — hard-deletes the room's notes and config |
 | `POST` | `/api/wall/new` | mints an unused slug |
-| `GET` | `/api/walls` | walls with note counts |
+| `GET` | `/api/walls` | rooms with note counts, names and layouts |
 | `GET` | `/api/templates` | available templates |
 | `POST` | `/api/template` | `{name, wall, author}` — seeds notes |
 | `GET` | `/api/health` | liveness |

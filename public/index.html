@@ -59,14 +59,26 @@
 <button id="kiosk-exit" type="button" title="leave display mode (Esc)">&times; exit display</button>
 
 <div id="roombox">
-  <h2>Rooms on this server</h2>
+  <h2>This room</h2>
+  <div id="room-this">
+    <input id="room-title" type="text" placeholder="give this room a name" maxlength="60">
+    <button id="room-rename" type="button">save</button>
+    <div id="room-layout">
+      layout:
+      <button id="layout-free" type="button">free wall</button>
+      <button id="layout-kanban" type="button">columns</button>
+      <button id="edit-columns" type="button">edit columns</button>
+    </div>
+  </div>
+
+  <h2>All rooms</h2>
   <div id="room-list">loading&hellip;</div>
   <div id="room-go">
-    <input id="room-name" type="text" placeholder="room name" maxlength="48">
+    <input id="room-name" type="text" placeholder="open or create a room" maxlength="48">
     <button id="room-open" type="button">open</button>
   </div>
-  <p id="room-hint">A room is created the moment you open it. Lower-case letters,
-     numbers and hyphens.</p>
+  <p id="room-hint">A room is created the moment you open it. The address uses
+     lower-case letters, numbers and hyphens; the name above can be anything.</p>
   <button id="room-close" type="button">close</button>
 </div>
 

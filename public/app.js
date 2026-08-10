@@ -51,6 +51,20 @@
   var lastMinimap = '';
   var lastZoomLabel = '';
 
+  // Room configuration: display name, layout, and columns when it is a board.
+  var meta = { wall: 'main', title: '', layout: 'free', columns: [] };
+  var lastMetaJSON = '';
+  var laneEls = [];
+  var boardContentH = 320;
+
+  // Kanban geometry, in wall coordinates.
+  var COL_W = 300;
+  var COL_GAP = 22;
+  var BOARD_PAD = 40;
+  var LANE_HEAD = 54;
+  var CARD_GAP = 12;
+  var CARD_INSET = 12;
+
   // The URL is the wall. /w/<slug> names one; bare / is the default wall, which
   // is what a self-hosted box on a home network actually wants.
   // Both /<room> and the longer /w/<room> alias resolve to the same wall.
@@ -144,8 +158,8 @@
 
   // Screen pixels and wall coordinates diverge as soon as zoom is not 1. Every
   // conversion goes through these two, so there is one place to be wrong.
-  function toWallX(clientX) { return (clientX + scrollX()) / zoom; }
-  function toWallY(clientY) { return (clientY + scrollY()) / zoom; }
+  function toWallX(clientX) { return (clientX + scrollX() - offX) / zoom; }
+  function toWallY(clientY) { return (clientY + scrollY() - offY) / zoom; }
 
   function setTransform(el, v) {
     el.style.webkitTransform = v;
@@ -176,10 +190,20 @@
 
   // ------------------------------------------------------------ zoom & pan
 
-  function applyZoom() {
-    setTransform(wall, zoom === 1 ? '' : 'scale(' + zoom + ')');
-    canvas.style.width = Math.round(wallW * zoom) + 'px';
-    canvas.style.height = Math.round(wallH * zoom) + 'px';
+  // offX/offY shift the wall inside the viewport. Scrolling alone cannot centre
+  // content that is smaller than the screen — scroll position clamps at zero —
+  // so "fit" translates the wall instead of trying to scroll to a negative
+  // offset. Manual zoom clears it and returns to the ordinary scrollable wall.
+  var offX = 0;
+  var offY = 0;
+
+  function applyZoom(canvasW, canvasH) {
+    var t = '';
+    if (offX || offY) t += 'translate(' + Math.round(offX) + 'px,' + Math.round(offY) + 'px) ';
+    if (zoom !== 1) t += 'scale(' + zoom + ')';
+    setTransform(wall, t);
+    canvas.style.width = Math.round(canvasW === undefined ? wallW * zoom : canvasW) + 'px';
+    canvas.style.height = Math.round(canvasH === undefined ? wallH * zoom : canvasH) + 'px';
     lastZoomLabel = setHTML(zoomLabel, Math.round(zoom * 100) + '%', lastZoomLabel);
     if (fitted) addClass(overviewBtn, 'on'); else removeClass(overviewBtn, 'on');
   }
@@ -195,6 +219,11 @@
 
     zoom = z;
     fitted = !!isFit;
+    // Any manual zoom drops the fitted framing and goes back to the plain
+    // scrollable wall, so the two never fight over where the origin is.
+    offX = 0;
+    offY = 0;
+    removeClass(body, 'fitted');
     applyZoom();
 
     window.scrollTo(
@@ -213,10 +242,80 @@
   document.getElementById('zoomin').onclick = function () { stepZoom(1); };
   document.getElementById('zoomout').onclick = function () { stepZoom(-1); };
 
+  // Fit to what is actually on the wall, not to the wall. Fitting 4000x3000 of
+  // mostly empty grid put the content in a corner and made it unreadable.
+  function contentBounds() {
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity, any = false;
+
+    for (var id in notes) {
+      if (!notes.hasOwnProperty(id)) continue;
+      var el = els[id];
+      if (!el) continue;
+      var x = parseInt(el.style.left, 10) || 0;
+      var y = parseInt(el.style.top, 10) || 0;
+      var w = el.offsetWidth || notes[id].w;
+      var h = el.offsetHeight || notes[id].h;
+      any = true;
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x + w > maxX) maxX = x + w;
+      if (y + h > maxY) maxY = y + h;
+    }
+
+    // Columns count as content even when empty, or an empty board would have
+    // nothing to fit to.
+    if (isKanban()) {
+      var names = columnNames();
+      any = true;
+      minX = Math.min(minX, BOARD_PAD);
+      minY = Math.min(minY, 0);
+      maxX = Math.max(maxX, columnX(names.length - 1) + COL_W);
+      maxY = Math.max(maxY, boardContentH);
+    }
+
+    if (!any) return null;
+
+    // Deliberately not clamped to zero. Clamping truncates the padding on the
+    // left and top only, which shifts the box off the content it describes and
+    // makes "centred" come out visibly lopsided. Negative origins are fine —
+    // the wall is translated into place, not scrolled.
+    var pad = 60;
+    var x0 = minX - pad;
+    var y0 = minY - pad;
+    return { x: x0, y: y0, w: (maxX + pad) - x0, h: (maxY + pad) - y0 };
+  }
+
+  function fitToContent() {
+    var b = contentBounds();
+    if (!b) { setZoom(1); return; }
+
+    var top = kioskOn ? 0 : 48;
+    var availW = viewW();
+    var availH = viewH() - top;
+
+    var z = Math.min(availW / b.w, availH / b.h);
+    z = Math.max(0.1, Math.min(1, z)); // never zoom past 100% just to fill space
+
+    zoom = z;
+    fitted = true;
+
+    var scaledW = b.w * z;
+    var scaledH = b.h * z;
+
+    // Pull the content's own top-left to the origin, then centre whatever slack
+    // is left. When the content is larger than the screen the slack is zero and
+    // this degrades to "start at the content, not at the empty grid".
+    offX = -b.x * z + Math.max(0, (availW - scaledW) / 2);
+    offY = -b.y * z + Math.max(0, (availH - scaledH) / 2) + top;
+
+    addClass(body, 'fitted');
+    window.scrollTo(0, 0);
+    applyZoom(Math.max(availW, scaledW), Math.max(availH, scaledH) + top);
+  }
+
   overviewBtn.onclick = function () {
     if (fitted) { setZoom(1); return; }
-    setZoom(Math.min(viewW() / wallW, (viewH() - 56) / wallH), 0, 0, true);
-    window.scrollTo(0, 0);
+    fitToContent();
   };
 
   // Ctrl/Cmd + wheel zooms, plain wheel scrolls. Same convention as every other
@@ -254,6 +353,157 @@
     }, false);
   })();
 
+  // ---------------------------------------------------------------- kanban
+  // A real board, not notes arranged to look like one: a card belongs to a
+  // column, the column decides where it sits, and dropping it somewhere else
+  // changes which column owns it. Still absolutely positioned divs — no canvas,
+  // no drag-and-drop API, nothing an old tablet cannot do.
+
+  function isKanban() { return meta.layout === 'kanban'; }
+
+  function columnNames() {
+    return (meta.columns && meta.columns.length) ? meta.columns : ['To do', 'Doing', 'Done'];
+  }
+
+  function columnX(i) { return BOARD_PAD + i * (COL_W + COL_GAP); }
+
+  function buildLanes(names) {
+    // Rebuild only when the column set actually changed; otherwise every poll
+    // would throw away and recreate the lane elements.
+    var signature = JSON.stringify(names);
+    if (wall.getAttribute('data-lanes') === signature) return;
+    wall.setAttribute('data-lanes', signature);
+
+    for (var i = 0; i < laneEls.length; i++) {
+      if (laneEls[i].parentNode) laneEls[i].parentNode.removeChild(laneEls[i]);
+    }
+    laneEls = [];
+
+    for (var j = 0; j < names.length; j++) {
+      var lane = document.createElement('div');
+      lane.className = 'lane';
+      lane.style.left = columnX(j) + 'px';
+      lane.style.width = COL_W + 'px';
+      var head = document.createElement('div');
+      head.className = 'lane-head';
+      head.innerHTML = escapeHTML(names[j]) + '<span class="lane-count"></span>';
+      lane.appendChild(head);
+      // Behind the cards, which are appended to #wall directly.
+      wall.insertBefore(lane, wall.firstChild);
+      laneEls.push(lane);
+    }
+  }
+
+  function groupByColumn(names) {
+    var groups = {};
+    var i;
+    for (i = 0; i < names.length; i++) groups[names[i]] = [];
+
+    for (var id in notes) {
+      if (!notes.hasOwnProperty(id)) continue;
+      var n = notes[id];
+      // A card whose column was renamed or removed is shown in the first
+      // column rather than vanishing. It is not rewritten on the server until
+      // somebody actually moves it.
+      if (groups[n.col]) groups[n.col].push(n);
+      else groups[names[0]].push(n);
+    }
+
+    for (i = 0; i < names.length; i++) {
+      groups[names[i]].sort(function (a, b) {
+        return (a.ord - b.ord) || (a.seq - b.seq);
+      });
+    }
+    return groups;
+  }
+
+  function layoutKanban() {
+    var names = columnNames();
+    buildLanes(names);
+    var groups = groupByColumn(names);
+    var tallest = 0;
+
+    for (var i = 0; i < names.length; i++) {
+      var list = groups[names[i]];
+      var x = columnX(i) + CARD_INSET;
+      var y = LANE_HEAD + CARD_GAP;
+
+      for (var j = 0; j < list.length; j++) {
+        var el = els[list[j].id];
+        if (!el) continue;
+        el.style.left = x + 'px';
+        el.style.width = (COL_W - CARD_INSET * 2) + 'px';
+        // Height comes from the content: a one-line card should not be as tall
+        // as a paragraph. Measured after the width is applied.
+        el.style.height = 'auto';
+        el.style.top = y + 'px';
+        y += el.offsetHeight + CARD_GAP;
+      }
+
+      if (laneEls[i]) {
+        var count = laneEls[i].firstChild.lastChild;
+        if (count) count.innerHTML = list.length ? String(list.length) : '';
+      }
+      if (y > tallest) tallest = y;
+    }
+
+    // Lane height follows the cards, not the viewport. Stretching lanes to fill
+    // the screen made the board taller than the screen, so "fit" could never
+    // show the bottom of it.
+    boardContentH = Math.max(tallest + 40, 320);
+    for (var k = 0; k < laneEls.length; k++) laneEls[k].style.height = boardContentH + 'px';
+
+    wallW = Math.max(BOARD_PAD * 2 + names.length * (COL_W + COL_GAP), viewW());
+    wallH = Math.max(boardContentH + BOARD_PAD * 2, viewH());
+    wall.style.width = wallW + 'px';
+    wall.style.height = wallH + 'px';
+    applyZoom();
+  }
+
+  // Where would a card dropped at this point land?
+  function dropTarget(clientX, clientY, movingId) {
+    var names = columnNames();
+    var wx = toWallX(clientX);
+    var wy = toWallY(clientY);
+
+    var best = 0;
+    for (var i = 0; i < names.length; i++) {
+      if (wx >= columnX(i) - COL_GAP / 2) best = i;
+    }
+
+    var list = groupByColumn(names)[names[best]].filter(function (n) {
+      return n.id !== movingId;
+    });
+
+    // Index is decided by how many cards start above the drop point.
+    var index = 0;
+    var y = LANE_HEAD + CARD_GAP;
+    for (var j = 0; j < list.length; j++) {
+      var el = els[list[j].id];
+      var h = el ? el.offsetHeight : 120;
+      if (wy > y + h / 2) index = j + 1;
+      y += h + CARD_GAP;
+    }
+    return { column: names[best], index: index, siblings: list };
+  }
+
+  function moveCard(id, clientX, clientY) {
+    var t = dropTarget(clientX, clientY, id);
+    var moving = notes[id];
+    t.siblings.splice(t.index, 0, moving);
+
+    // Renumber the destination column so ordering survives a reload. Only the
+    // cards whose position actually changed get written back.
+    for (var i = 0; i < t.siblings.length; i++) {
+      var n = t.siblings[i];
+      if (n.col === t.column && n.ord === i) continue;
+      n.col = t.column;
+      n.ord = i;
+      saveNote(n, null, true);
+    }
+    layoutKanban();
+  }
+
   // ----------------------------------------------------------- note render
 
   function renderNote(n) {
@@ -283,19 +533,24 @@
     }
     notes[n.id] = n;
     el.className = 'note c-' + n.color;
-    el.style.left = n.x + 'px';
-    el.style.top = n.y + 'px';
-    el.style.width = n.w + 'px';
-    el.style.height = n.h + 'px';
+    // In kanban the column owns the geometry, so only the freeform wall reads
+    // x/y/w/h off the note itself.
+    if (!isKanban()) {
+      el.style.left = n.x + 'px';
+      el.style.top = n.y + 'px';
+      el.style.width = n.w + 'px';
+      el.style.height = n.h + 'px';
+    }
     el.firstChild.innerHTML = escapeHTML(n.text) +
       (n.author ? '<span class="author">' + escapeHTML(n.author) + '</span>' : '');
     refreshEmptyState();
   }
 
-  function saveNote(n, cb) {
+  function saveNote(n, cb, skipLayout) {
     notes[n.id] = n;
     renderNote(n);
     n.wall = wallId;
+    if (isKanban() && !skipLayout) layoutKanban();
     xhr('POST', '/api/note', n, function (err, data) {
       if (!err && data && data.seq) seq = Math.max(seq, data.seq);
       if (cb) cb(err);
@@ -316,15 +571,17 @@
   // old mobile Safari, and pointer events are far too new to rely on.
 
   function attachDrag(el, id) {
-    var startX, startY, origX, origY, moved, downAt;
+    var startX, startY, origX, origY, moved, downAt, lastX, lastY;
 
     function down(e) {
       if (editingId || kioskOn) return;
       var t = e.touches ? e.touches[0] : e;
-      startX = t.clientX;
-      startY = t.clientY;
-      origX = notes[id].x;
-      origY = notes[id].y;
+      startX = lastX = t.clientX;
+      startY = lastY = t.clientY;
+      // In kanban the card's current pixel position is the drag origin, since
+      // its x/y fields describe where it sat on the freeform wall instead.
+      origX = isKanban() ? parseInt(el.style.left, 10) || 0 : notes[id].x;
+      origY = isKanban() ? parseInt(el.style.top, 10) || 0 : notes[id].y;
       moved = false;
       downAt = new Date().getTime();
       addClass(el, 'dragging');
@@ -342,17 +599,28 @@
 
     function move(e) {
       var t = e.touches ? e.touches[0] : e;
+      lastX = t.clientX;
+      lastY = t.clientY;
       // Screen movement divided by zoom: at 50% the pointer travels twice as
       // far as the note should.
       var dx = (t.clientX - startX) / zoom;
       var dy = (t.clientY - startY) / zoom;
       if (Math.abs(dx) > 4 / zoom || Math.abs(dy) > 4 / zoom) moved = true;
-      var nx = Math.max(0, Math.min(wallW - notes[id].w, origX + dx));
-      var ny = Math.max(0, Math.min(wallH - notes[id].h, origY + dy));
-      notes[id].x = nx;
-      notes[id].y = ny;
-      el.style.left = nx + 'px';
-      el.style.top = ny + 'px';
+
+      if (isKanban()) {
+        // Cards follow the finger freely while dragging and snap into a column
+        // on release. Live reordering mid-drag is a lot of layout work for
+        // hardware that cannot spare it.
+        el.style.left = (origX + dx) + 'px';
+        el.style.top = (origY + dy) + 'px';
+      } else {
+        var nx = Math.max(0, Math.min(wallW - notes[id].w, origX + dx));
+        var ny = Math.max(0, Math.min(wallH - notes[id].h, origY + dy));
+        notes[id].x = nx;
+        notes[id].y = ny;
+        el.style.left = nx + 'px';
+        el.style.top = ny + 'px';
+      }
       if (e.preventDefault) e.preventDefault();
     }
 
@@ -364,7 +632,8 @@
       removeClass(el, 'dragging');
 
       if (moved) {
-        saveNote(notes[id]);
+        if (isKanban()) moveCard(id, lastX, lastY);
+        else saveNote(notes[id]);
       } else if (new Date().getTime() - downAt < 700) {
         openEditor(id);
       }
@@ -506,13 +775,55 @@
 
   function wallPath() { return wallId === 'main' ? '/' : '/' + wallId; }
 
+  // The chip shows the room's given name when it has one, and falls back to the
+  // slug in the URL. The slug is what you type; the title is what you call it.
+  function applyLayout() {
+    wallNameEl.innerHTML = escapeHTML(meta.title || wallId);
+    wallNameEl.title = meta.title
+      ? meta.title + ' (' + wallId + ') — tap to manage rooms'
+      : 'this room — tap to see and switch rooms';
+
+    if (isKanban()) {
+      addClass(body, 'board');
+      layoutKanban();
+    } else {
+      removeClass(body, 'board');
+      wall.removeAttribute('data-lanes');
+      for (var i = 0; i < laneEls.length; i++) {
+        if (laneEls[i].parentNode) laneEls[i].parentNode.removeChild(laneEls[i]);
+      }
+      laneEls = [];
+      wallW = 4000;
+      wallH = 3000;
+      wall.style.width = wallW + 'px';
+      wall.style.height = wallH + 'px';
+      // Freeform positions were never applied while the board owned geometry.
+      for (var id in notes) if (notes.hasOwnProperty(id)) renderNote(notes[id]);
+      applyZoom();
+    }
+  }
+
+  function saveMeta(patch, cb) {
+    var payload = { wall: wallId };
+    if (patch.title !== undefined) payload.title = patch.title;
+    if (patch.layout !== undefined) payload.layout = patch.layout;
+    if (patch.columns !== undefined) payload.columns = patch.columns;
+    xhr('POST', '/api/wall', payload, function (err, data) {
+      if (!err && data && data.meta) {
+        meta = data.meta;
+        lastMetaJSON = JSON.stringify(meta);
+        applyLayout();
+      }
+      if (cb) cb(err);
+    });
+  }
+
   // Tapping the room chip answers "what rooms are there?", which is otherwise
   // unanswerable: rooms exist by being visited, so nothing lists them until
   // something asks the server.
   var roombox = document.getElementById('roombox');
 
-  function openRooms() {
-    roombox.className = 'open';
+  function refreshRoomList() {
     var list = document.getElementById('room-list');
     list.innerHTML = 'loading&hellip;';
 
@@ -535,19 +846,97 @@
           var row = document.createElement('div');
           var here = w.wall === wallId;
           row.className = 'room' + (here ? ' here' : '');
-          row.innerHTML = '<span class="count">' + w.notes +
-            (w.notes === 1 ? ' note' : ' notes') + '</span>' +
-            escapeHTML(w.wall) + (here ? '<span class="tag">you are here</span>' : '');
-          if (!here) {
-            row.onclick = function () {
-              window.location.href = w.wall === 'main' ? '/' : '/' + w.wall;
+
+          var label = w.title ? escapeHTML(w.title) +
+            ' <span class="slug">/' + escapeHTML(w.wall) + '</span>' : escapeHTML(w.wall);
+
+          row.innerHTML =
+            '<button class="room-del" type="button" title="delete this room">&times;</button>' +
+            '<span class="count">' + w.notes + (w.notes === 1 ? ' note' : ' notes') +
+            (w.layout === 'kanban' ? ' · columns' : '') + '</span>' +
+            label + (here ? '<span class="tag">you are here</span>' : '');
+
+          var go = row.querySelector ? row.querySelector('.room-del') : null;
+          if (go) {
+            go.onclick = function (e) {
+              if (e.stopPropagation) e.stopPropagation();
+              deleteRoom(w);
             };
           }
+
+          row.onclick = function () {
+            if (here) return;
+            window.location.href = w.wall === 'main' ? '/' : '/' + w.wall;
+          };
           list.appendChild(row);
         })(walls[j]);
       }
     });
   }
+
+  // Deleting a room throws its notes away for everyone, so the confirmation
+  // names the room and says how much is in it rather than asking "are you sure".
+  function deleteRoom(w) {
+    var what = (w.title ? w.title + ' (/' + w.wall + ')' : '/' + w.wall);
+    var msg = 'Delete ' + what + ' and its ' + w.notes +
+      (w.notes === 1 ? ' note' : ' notes') + '?\n\nThis cannot be undone.';
+    if (!window.confirm(msg)) return;
+
+    xhr('POST', '/api/wall/delete', { wall: w.wall }, function (err) {
+      if (err) { toast('Could not delete that room'); return; }
+      if (w.wall === wallId) {
+        // You just deleted the room you are standing in.
+        window.location.href = '/';
+        return;
+      }
+      refreshRoomList();
+      toast('Deleted ' + what);
+    });
+  }
+
+  function openRooms() {
+    roombox.className = 'open';
+    document.getElementById('room-title').value = meta.title || '';
+    markLayoutButtons();
+    refreshRoomList();
+  }
+
+  function markLayoutButtons() {
+    var free = document.getElementById('layout-free');
+    var kan = document.getElementById('layout-kanban');
+    if (isKanban()) { addClass(kan, 'on'); removeClass(free, 'on'); }
+    else { addClass(free, 'on'); removeClass(kan, 'on'); }
+  }
+
+  document.getElementById('room-rename').onclick = function () {
+    saveMeta({ title: document.getElementById('room-title').value }, function () {
+      refreshRoomList();
+      toast('Room renamed');
+    });
+  };
+
+  document.getElementById('layout-free').onclick = function () {
+    saveMeta({ layout: 'free' }, markLayoutButtons);
+  };
+
+  document.getElementById('layout-kanban').onclick = function () {
+    var cols = (meta.columns && meta.columns.length) ? meta.columns : ['To do', 'Doing', 'Done'];
+    saveMeta({ layout: 'kanban', columns: cols }, markLayoutButtons);
+  };
+
+  document.getElementById('edit-columns').onclick = function () {
+    var current = columnNames().join(', ');
+    var next = window.prompt('Columns, separated by commas:', current);
+    if (next === null) return;
+    var list = [];
+    var parts = next.split(',');
+    for (var i = 0; i < parts.length; i++) {
+      var name = parts[i].replace(/^\s+|\s+$/g, '');
+      if (name) list.push(name);
+    }
+    if (!list.length) { toast('A board needs at least one column'); return; }
+    saveMeta({ layout: 'kanban', columns: list }, markLayoutButtons);
+  };
 
   wallNameEl.onclick = openRooms;
   document.getElementById('room-close').onclick = function () { roombox.className = ''; };
@@ -773,7 +1162,16 @@
           ? data.peers.length + ' other' + (data.peers.length > 1 ? 's' : '') + ' here'
           : 'synced', lastStatus);
 
-        if (data.wall && (data.wall.w !== wallW || data.wall.h !== wallH)) {
+        if (data.meta) {
+          var mj = JSON.stringify(data.meta);
+          if (mj !== lastMetaJSON) {
+            lastMetaJSON = mj;
+            meta = data.meta;
+            applyLayout();
+          }
+        }
+
+        if (!isKanban() && data.wall && (data.wall.w !== wallW || data.wall.h !== wallH)) {
           wallW = data.wall.w;
           wallH = data.wall.h;
           wall.style.width = wallW + 'px';
@@ -794,6 +1192,7 @@
           renderNote(n);
         }
         seq = data.seq;
+        if (isKanban() && data.notes.length) layoutKanban();
         drawMinimap(data.peers);
       }
 
