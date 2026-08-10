@@ -1,0 +1,65 @@
+name: pages
+
+# Publishes the landing page to GitHub Pages on every push to main.
+#
+# One-time setup in the repo: Settings -> Pages -> Source: "GitHub Actions".
+# Without that, this workflow runs and the deploy step fails with a 404,
+# because there is no Pages site to deploy into yet.
+
+on:
+  push:
+    branches: [main]
+    # Only rebuild when something the site is actually made of changes.
+    paths:
+      - 'public/landing.html'
+      - 'public/favicon.svg'
+      - 'public/icon.png'
+      - 'scripts/build-site.js'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race; a half-published site is worse than a stale one.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Build the site
+        # Rewrites absolute paths to relative (this is a project page served
+        # under /attic/) and points app-only links at the repo. Fails if any
+        # absolute path survives, since those 404 on a static host.
+        run: node scripts/build-site.js
+        env:
+          ATTIC_SITE_URL: https://prahaladasumirantechlabs.github.io/attic/
+          # Set ATTIC_CNAME here when a custom domain is ready, and add the
+          # matching DNS record. Leaving it unset is correct until then.
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
