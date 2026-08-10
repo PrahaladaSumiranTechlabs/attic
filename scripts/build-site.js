@@ -6,9 +6,11 @@
 //
 //   1. By the app itself, at /landing, where the wall is next door and absolute
 //      paths like /favicon.svg resolve.
-//   2. As a static marketing site on GitHub Pages, where there is no server,
-//      no wall to link to, and — because this is a *project* page — the site
-//      lives under /attic/ rather than at the domain root.
+//   2. As a static marketing site on GitHub Pages, where there is no server and
+//      no wall to link to. Asset paths are made relative rather than absolute so
+//      the output is correct whether it is served from a custom domain at the
+//      root (attic.programmershop.in) or from the project path (/attic/) before
+//      DNS is pointed.
 //
 // So this rewrites rather than copies: absolute asset paths become relative, and
 // links into a running app become links to the download. One source file, two
@@ -21,8 +23,7 @@ const ROOT = path.join(__dirname, '..');
 const OUT = path.join(ROOT, 'site');
 const REPO = 'https://github.com/PrahaladaSumiranTechlabs/attic';
 const RELEASES = REPO + '/releases';
-const SITE_URL = process.env.ATTIC_SITE_URL ||
-  'https://prahaladasumirantechlabs.github.io/attic/';
+const SITE_URL = process.env.ATTIC_SITE_URL || 'https://attic.programmershop.in/';
 
 // Anything that only exists when a server is running. Left pointing at "/" on a
 // static host, these would land on the site's own front page and look broken.

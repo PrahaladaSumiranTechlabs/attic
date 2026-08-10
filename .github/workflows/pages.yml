@@ -39,14 +39,17 @@ jobs:
           node-version: '22'
 
       - name: Build the site
-        # Rewrites absolute paths to relative (this is a project page served
-        # under /attic/) and points app-only links at the repo. Fails if any
-        # absolute path survives, since those 404 on a static host.
+        # Rewrites absolute asset paths to relative and points app-only links
+        # at the repo. Relative paths are correct both on the custom domain at
+        # the root and on the project path (/attic/) before DNS resolves, so
+        # the site is not broken during the changeover. Fails the build if any
+        # reference would 404.
         run: node scripts/build-site.js
         env:
-          ATTIC_SITE_URL: https://prahaladasumirantechlabs.github.io/attic/
-          # Set ATTIC_CNAME here when a custom domain is ready, and add the
-          # matching DNS record. Leaving it unset is correct until then.
+          ATTIC_SITE_URL: https://attic.programmershop.in/
+          # Writes the CNAME file Pages needs to answer on a custom domain.
+          # Requires a DNS CNAME: attic.programmershop.in -> <owner>.github.io
+          ATTIC_CNAME: attic.programmershop.in
 
       # enablement turns Pages on via the API if it is not on already, which is
       # otherwise a manual visit to Settings -> Pages before the first deploy
