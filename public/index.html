@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<!-- No user scaling: on old tablets, pinch-zoom fights with note dragging.
+     The Overview button replaces it, and works on hardware that cannot do
+     smooth gesture handling. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Attic">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="description" content="Attic — everything you forgot you had. A sticky idea wall that syncs across your devices, including the old ones.">
+<title>Attic</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<!-- #canvas owns the scrollable area (wall size x zoom); #wall renders at true
+     coordinates and is scaled by a CSS transform. Transforms do not affect
+     layout, so without the outer element the page would never scroll. -->
+<div id="canvas"><div id="wall"></div></div>
+
+<div id="empty">
+  <h1>Attic</h1>
+  <p class="tag">Everything you forgot you had.</p>
+  <p>This wall is empty. Tap <b>+ note</b> to pin the first one &mdash; it shows up
+     on every other device within a second or two.</p>
+  <p class="or">or start from a layout</p>
+  <div id="templates"></div>
+  <p class="fine">Got something older than this app expects? Open
+     <a href="/legacy">the basic wall</a> on it.</p>
+</div>
+
+<div id="bar">
+  <span id="brand">Attic</span>
+  <span id="wallname" title="this wall — tap to copy its link"></span>
+  <button id="add" type="button">+ note</button>
+  <button id="newwall" type="button">new wall</button>
+  <span id="swatches"></span>
+  <button id="zoomout" type="button" title="zoom out">&minus;</button>
+  <span id="zoomlevel">100%</span>
+  <button id="zoomin" type="button" title="zoom in">+</button>
+  <button id="overview" type="button">fit</button>
+  <button id="kiosk" type="button">display</button>
+  <button id="eink" type="button">e-ink</button>
+  <span id="who"></span>
+  <span id="status">connecting</span>
+</div>
+
+<div id="minimap" title="who is where on the wall">
+  <div id="mm-inner"></div>
+</div>
+
+<!-- Display mode chrome: one button to add, one invisible corner to get out. -->
+<button id="kiosk-add" type="button">+</button>
+<button id="kiosk-exit" type="button" title="leave display mode"></button>
+
+<div id="editor">
+  <textarea id="editor-text"></textarea>
+  <div id="editor-bar">
+    <button id="editor-save" type="button">save</button>
+    <button id="editor-del" type="button">delete</button>
+    <button id="editor-cancel" type="button">cancel</button>
+  </div>
+</div>
+
+<noscript>
+  <div id="noscript">
+    This browser has JavaScript disabled or unsupported.
+    <a href="/legacy">Open the basic wall</a> instead &mdash; it works without JavaScript.
+  </div>
+</noscript>
+
+<script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,528 @@
+/* Attic — no CSS variables, no grid, minimal flexbox. Everything here has to
+   render on a 2011 tablet browser, so layout leans on absolute positioning. */
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #f4f1ea;
+  color: #2b2b2b;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  /* The window itself scrolls the wall. Simplest thing that works everywhere. */
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+#canvas { position: relative; }
+
+/* Grab-to-pan on the empty board, the way an infinite canvas is expected to
+   behave. Mouse only: on touch, native scrolling already does this better and
+   with momentum. */
+#canvas.panning { cursor: grabbing; }
+#canvas { cursor: grab; }
+body.kiosk #canvas { cursor: default; }
+
+#wall {
+  position: absolute;
+  left: 0;
+  top: 0;
+  /* Faint grid so panning a large empty wall still gives a sense of place.
+     A repeating gradient is cheap; no image request, no canvas. */
+  background-image:
+    linear-gradient(to right, rgba(0,0,0,0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0,0,0,0.045) 1px, transparent 1px);
+  background-size: 40px 40px;
+  -webkit-transform-origin: 0 0;
+  transform-origin: 0 0;
+}
+
+/* ------------------------------------------------------------------ notes */
+
+.note {
+  position: absolute;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 2px;
+  box-shadow: 2px 3px 6px rgba(0, 0, 0, 0.16);
+  cursor: move;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+}
+
+.note-body {
+  padding: 12px;
+  font-size: 16px;
+  line-height: 1.32;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow: hidden;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.note-body .author {
+  display: block;
+  margin-top: 8px;
+  font-size: 11px;
+  opacity: 0.55;
+}
+
+.note.dragging {
+  box-shadow: 5px 8px 18px rgba(0, 0, 0, 0.28);
+  opacity: 0.92;
+  z-index: 500;
+}
+
+/* Resize grip: big enough for a finger, quiet enough not to shout. */
+.note-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 26px;
+  height: 26px;
+  cursor: se-resize;
+  background-image: linear-gradient(
+    135deg,
+    transparent 0%, transparent 55%,
+    rgba(0,0,0,0.22) 55%, rgba(0,0,0,0.22) 62%,
+    transparent 62%, transparent 72%,
+    rgba(0,0,0,0.22) 72%, rgba(0,0,0,0.22) 79%,
+    transparent 79%
+  );
+}
+
+.c-yellow { background: #ffe89a; }
+.c-pink   { background: #ffc2d1; }
+.c-blue   { background: #bfe0ff; }
+.c-green  { background: #c6ecc6; }
+.c-orange { background: #ffd4a8; }
+.c-purple { background: #dcc9f5; }
+
+/* -------------------------------------------------------------- toolbar */
+
+#bar {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  height: 48px;
+  line-height: 48px;
+  background: rgba(255, 255, 255, 0.94);
+  border-bottom: 1px solid #ddd;
+  padding: 0 10px;
+  z-index: 1000;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+#brand {
+  font-weight: bold;
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  margin-right: 14px;
+  color: #8a6d1f;
+}
+
+#bar button,
+#editor-bar button {
+  font-size: 15px;
+  min-height: 34px;
+  padding: 6px 14px;
+  margin-right: 8px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  background: #fff;
+  color: #222;
+  cursor: pointer;
+}
+
+#bar button:active,
+#editor-bar button:active { background: #eee; }
+#bar button.on { background: #ffe89a; border-color: #c8a020; }
+
+#swatches { margin-left: 4px; margin-right: 8px; }
+
+#zoomlevel {
+  display: inline-block;
+  min-width: 44px;
+  margin-right: 8px;
+  font-size: 12.5px;
+  color: #777;
+  text-align: center;
+}
+
+#zoomin, #zoomout { min-width: 38px; padding: 6px 10px; }
+body.eink #zoomlevel { color: #000; }
+
+.swatch {
+  display: inline-block;
+  width: 26px;
+  height: 26px;
+  margin-right: 5px;
+  vertical-align: middle;
+  border: 2px solid rgba(0, 0, 0, 0.15);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.swatch.on {
+  border-color: #333;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.12);
+}
+
+#wallname {
+  font-size: 12.5px;
+  color: #8a6d1f;
+  background: #fdf6e0;
+  border: 1px solid #e8dcb8;
+  border-radius: 3px;
+  padding: 3px 8px;
+  margin-right: 12px;
+  cursor: pointer;
+}
+
+body.eink #wallname { background: #fff; border: 2px solid #000; color: #000; border-radius: 0; }
+
+#who, #status {
+  font-size: 12px;
+  color: #777;
+  margin-left: 12px;
+}
+
+#who { cursor: pointer; text-decoration: underline; }
+#status.err { color: #b03030; }
+
+/* ---------------------------------------------------------- empty state */
+
+#empty {
+  display: none;
+  position: fixed;
+  left: 50%;
+  top: 46%;
+  width: 320px;
+  margin-left: -170px;
+  margin-top: -130px;
+  padding: 24px 26px;
+  background: #fff;
+  border: 1px solid #e2ddd0;
+  border-radius: 6px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.10);
+  text-align: center;
+  z-index: 900;
+}
+
+body.is-empty #empty { display: block; }
+body.kiosk #empty, body.overview #empty { display: none; }
+
+#empty h1 {
+  margin: 0;
+  font-size: 26px;
+  letter-spacing: 0.06em;
+  color: #8a6d1f;
+}
+
+#empty .tag {
+  margin: 4px 0 16px;
+  font-size: 13px;
+  font-style: italic;
+  color: #999;
+}
+
+#empty p { font-size: 14px; line-height: 1.5; color: #555; }
+#empty .fine { font-size: 12px; color: #999; margin-bottom: 0; }
+
+#empty .or {
+  margin: 18px 0 10px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #aaa;
+}
+
+#templates { margin-bottom: 18px; }
+
+.tpl {
+  display: inline-block;
+  width: 128px;
+  margin: 0 4px 8px;
+  padding: 9px 6px;
+  vertical-align: top;
+  border: 1px solid #ddd6c2;
+  border-radius: 4px;
+  background: #fdfbf5;
+  cursor: pointer;
+  text-align: left;
+}
+
+.tpl:active { background: #f4efe0; }
+.tpl b { display: block; font-size: 13px; color: #8a6d1f; }
+.tpl span { display: block; font-size: 11px; line-height: 1.35; color: #999; margin-top: 2px; }
+
+body.eink .tpl { background: #fff; border: 2px solid #000; border-radius: 0; }
+body.eink .tpl b, body.eink .tpl span { color: #000; }
+body.eink #empty .or { color: #000; }
+
+/* -------------------------------------------------------------- minimap */
+
+#minimap {
+  position: fixed;
+  right: 10px;
+  bottom: 10px;
+  width: 170px;
+  height: 128px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  z-index: 1000;
+  cursor: pointer;
+}
+
+#mm-inner { position: relative; width: 100%; height: 100%; }
+
+/* Each peer's viewport, drawn as a labelled rectangle. This is the whole
+   presence model: where someone is parked, not a twitchy live cursor. */
+.mm-view {
+  position: absolute;
+  border: 2px solid #888;
+  background: rgba(0, 0, 0, 0.05);
+  box-sizing: border-box;
+}
+
+.mm-view.me { border-color: #333; background: rgba(0, 0, 0, 0.12); }
+.mm-view.idle { opacity: 0.45; }
+
+.mm-label {
+  position: absolute;
+  top: -14px;
+  left: -2px;
+  font-size: 10px;
+  line-height: 12px;
+  padding: 0 3px;
+  color: #fff;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+
+.mm-dot {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+
+/* --------------------------------------------------------- display mode */
+/* A wall-mounted tablet should show the wall and nothing else. Dragging is
+   off so a passer-by cannot rearrange the board by brushing the screen. */
+
+#kiosk-add, #kiosk-exit { display: none; }
+
+body.kiosk #bar,
+body.kiosk #minimap { display: none; }
+
+body.kiosk #kiosk-add {
+  display: block;
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  width: 56px;
+  height: 56px;
+  font-size: 30px;
+  line-height: 52px;
+  padding: 0;
+  border: 1px solid #d8cfae;
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #8a6d1f;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.18);
+  z-index: 1000;
+  cursor: pointer;
+}
+
+/* Deliberately invisible: an escape hatch, not a control. */
+body.kiosk #kiosk-exit {
+  display: block;
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  z-index: 1001;
+  cursor: default;
+}
+
+body.kiosk .note { cursor: default; }
+body.kiosk .note-grip { display: none; }
+
+/* ------------------------------------------------------------- overview */
+
+body.overview { overflow: hidden; }
+body.overview .note-grip { display: none; }
+body.overview .note { cursor: zoom-in; }
+
+#overview-hint {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 8px;
+  text-align: center;
+  font-size: 12px;
+  color: #777;
+  background: rgba(255, 255, 255, 0.85);
+  z-index: 1200;
+}
+
+/* ----------------------------------------------------------- e-ink mode */
+/* Real e-paper, not an LCD imitating it. That inverts the usual advice:
+   maximum contrast is correct here (the panel is reflective, there is no
+   backlight to soften), and grey fills are actively harmful because partial
+   refreshes leave them ghosted. So: pure black on pure white, borders instead
+   of fills, and colour encoded as border STYLE since the panel is greyscale. */
+
+body.eink,
+body.eink #wall {
+  background: #fff;
+  color: #000;
+}
+
+/* The grid would ghost across every partial refresh. */
+body.eink #wall { background-image: none; }
+
+/* Kill every soft edge: shadows and translucency both render as mud. */
+body.eink .note {
+  background: #fff !important;
+  color: #000;
+  box-shadow: none;
+  border-color: #000;
+  border-width: 2px;
+  border-radius: 0;
+}
+
+body.eink .note-body { font-size: 17px; }
+body.eink .note-body .author { opacity: 1; color: #000; font-size: 12px; }
+
+/* Colour survives as texture, which is all a greyscale panel can show. */
+body.eink .c-yellow { border-style: solid; border-width: 2px; }
+body.eink .c-pink   { border-style: dashed; border-width: 2px; }
+body.eink .c-blue   { border-style: dotted; border-width: 3px; }
+body.eink .c-green  { border-style: double; border-width: 4px; }
+body.eink .c-orange { border-style: solid; border-width: 5px; }
+body.eink .c-purple { border-style: dashed; border-width: 5px; }
+
+body.eink .swatch { border-color: #000; background: #fff !important; }
+body.eink .swatch.c-yellow { border-style: solid; }
+body.eink .swatch.c-pink   { border-style: dashed; }
+body.eink .swatch.c-blue   { border-style: dotted; }
+body.eink .swatch.c-green  { border-style: double; }
+body.eink .swatch.c-orange { border-style: solid; border-width: 4px; }
+body.eink .swatch.c-purple { border-style: dashed; border-width: 4px; }
+body.eink .swatch.on { box-shadow: none; background: #000 !important; }
+
+body.eink #bar {
+  background: #fff;
+  border-bottom: 2px solid #000;
+}
+
+body.eink #brand { color: #000; }
+body.eink #who, body.eink #eink-note { color: #000; }
+body.eink #status { color: #000; }
+
+body.eink #bar button {
+  border: 2px solid #000;
+  border-radius: 0;
+  background: #fff;
+  color: #000;
+}
+
+body.eink #bar button.on { background: #000; color: #fff; }
+
+/* Presence is a live-updating region; on e-paper that is a refresh loop you
+   can watch. Hidden here, and the poll interval is stretched to match. */
+body.eink #minimap { display: none; }
+
+body.eink #empty,
+body.eink #editor {
+  background: #fff;
+  border: 2px solid #000;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+body.eink #empty h1, body.eink #empty p, body.eink #empty .tag,
+body.eink #empty .fine { color: #000; }
+
+body.eink #editor-text {
+  border: 2px solid #000;
+  border-radius: 0;
+  font-size: 17px;
+}
+
+body.eink .note-grip {
+  background-image: none;
+  border-left: 2px solid #000;
+  border-top: 2px solid #000;
+}
+
+body.eink #kiosk-add {
+  background: #fff;
+  color: #000;
+  border: 2px solid #000;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+body.eink #overview-hint { background: #fff; color: #000; border-top: 2px solid #000; }
+
+/* --------------------------------------------------------------- editor */
+
+#editor {
+  display: none;
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: 300px;
+  margin-left: -160px;
+  margin-top: -120px;
+  padding: 10px;
+  background: #fff;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+  z-index: 2000;
+}
+
+#editor.open { display: block; }
+
+#editor-text {
+  width: 100%;
+  height: 150px;
+  box-sizing: border-box;
+  font-size: 16px; /* under 16px, iOS zooms the page on focus */
+  font-family: inherit;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  resize: none;
+}
+
+#editor-bar { margin-top: 8px; }
+#editor-del { float: right; margin-right: 0; color: #b03030; }
+
+#noscript {
+  position: fixed;
+  left: 0; right: 0; top: 48px;
+  padding: 14px;
+  background: #fff3cd;
+  border-bottom: 1px solid #e0d090;
+  font-size: 14px;
+  z-index: 1500;
+}

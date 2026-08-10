@@ -1,0 +1,59 @@
+{
+  "name": "attic",
+  "version": "0.1.0",
+  "description": "Attic - everything you forgot you had. A shared idea wall that runs on the tablet in your drawer.",
+  "license": "AGPL-3.0-or-later",
+  "homepage": "https://github.com/PrahaladaSumiranTechlabs/attic",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PrahaladaSumiranTechlabs/attic.git"
+  },
+  "main": "desktop/main.js",
+  "scripts": {
+    "start": "node server.js",
+    "desktop": "electron .",
+    "icon": "node scripts/make-icon.js",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "in.attic.app",
+    "productName": "Attic",
+    "files": [
+      "server.js",
+      "desktop/**/*",
+      "public/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": ["nsis", "portable"],
+      "icon": "public/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "icon": "public/icon.png",
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "icon": "public/icon.png",
+      "category": "Office"
+    }
+  }
+}
