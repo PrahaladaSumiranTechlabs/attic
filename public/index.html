@@ -34,7 +34,7 @@
 </div>
 
 <div id="bar">
-  <span id="brandwrap">
+  <span id="brandwrap" title="version, address and settings">
     <svg id="mark" viewBox="0 0 64 64" aria-hidden="true">
       <path d="M12 51V27L32 12l20 15v24z" fill="#ffe89a" stroke="#c8a020"
             stroke-width="4" stroke-linejoin="round"/>
@@ -77,6 +77,14 @@
 <!-- Display mode chrome: one button to add, one invisible corner to get out. -->
 <button id="kiosk-add" type="button">+</button>
 <button id="kiosk-exit" type="button" title="leave display mode (Esc)">&times; exit display</button>
+
+<!-- Version, address and where settings live. Reachable from the wordmark,
+     because on a tablet there is no tray menu to fall back on. -->
+<div id="aboutbox">
+  <h2>Attic</h2>
+  <div id="about-body">loading&hellip;</div>
+  <button id="about-close" type="button">close</button>
+</div>
 
 <div id="roombox">
   <h2>This room</h2>

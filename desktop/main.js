@@ -113,6 +113,12 @@ function startServer() {
       // Keep the database beside the user's data, not inside the app bundle,
       // which is read-only once packaged.
       NOTER_DB: path.join(app.getPath('userData'), 'attic.db'),
+      // So the in-app About panel can show where settings live. A tablet has
+      // no tray menu to find it from.
+      ATTIC_SETTINGS: settingsPath(),
+      // package.json is inside the asar, not beside the unpacked server, so the
+      // server cannot read its own version once packaged. Hand it over.
+      ATTIC_VERSION: app.getVersion(),
     }),
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
   });
@@ -201,7 +207,7 @@ function createTray() {
   }
 
   const menu = Menu.buildFromTemplate([
-    { label: 'Attic — ' + shareURL(), enabled: false },
+    { label: 'Attic ' + app.getVersion() + ' — ' + shareURL(), enabled: false },
     { type: 'separator' },
     { label: 'Open wall', click: () => { win.show(); win.focus(); } },
     {

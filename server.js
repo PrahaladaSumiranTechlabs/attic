@@ -16,6 +16,20 @@ const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const qr = require('./lib/qr.js');
 
+// Read once at startup. A version nobody can see is a version nobody can
+// report in a bug, so this is surfaced in the app rather than only in git.
+const VERSION = (() => {
+  // The desktop app passes this in, because a packaged server runs from
+  // app.asar.unpacked where package.json is not unpacked alongside it — reading
+  // it from disk there fails and the app reports its version as "unknown".
+  if (process.env.ATTIC_VERSION) return process.env.ATTIC_VERSION;
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version;
+  } catch (e) {
+    return 'unknown';
+  }
+})();
+
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || '0.0.0.0';
 const DB_PATH = process.env.NOTER_DB || path.join(__dirname, 'noter.db');
@@ -1031,9 +1045,29 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Everything you would want to quote in a bug report, in one place.
+  if (p === '/api/about' && req.method === 'GET') {
+    sendJSON(res, 200, {
+      version: VERSION,
+      port: PORT,
+      host: HOST,
+      addresses: lanAddresses(),
+      database: DB_PATH,
+      // Only the desktop app has a settings file; the server takes env vars.
+      settingsPath: process.env.ATTIC_SETTINGS || null,
+      desktop: !!process.env.ATTIC_SETTINGS,
+      node: process.versions.node,
+      walls: q.walls.all().length,
+      notes: q.countAll.get().n,
+      startedAt: STARTED_AT,
+    });
+    return;
+  }
+
   if (p === '/api/health') {
     sendJSON(res, 200, {
       ok: true,
+      version: VERSION,
       notes: q.countAll.get().n,
       walls: q.walls.all().length,
       peers: peers.size,
@@ -1065,8 +1099,10 @@ const server = http.createServer((req, res) => {
   serveStatic(res, p);
 });
 
+const STARTED_AT = new Date().toISOString();
+
 server.listen(PORT, HOST, () => {
-  console.log('Attic listening on http://' + HOST + ':' + PORT);
+  console.log('Attic ' + VERSION + ' listening on http://' + HOST + ':' + PORT);
   console.log('  wall      ->  /');
   console.log('  room      ->  /<room-name>');
   console.log('  connect   ->  /connect   (QR codes for other devices)');

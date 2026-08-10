@@ -1301,6 +1301,55 @@
     });
   };
 
+  // ------------------------------------------------------------------ about
+  // Version and address, reachable from the wordmark. The tray menu already
+  // carries this on the desktop, but a tablet has no tray — and a version
+  // nobody can see is a version nobody can quote in a bug report.
+
+  var aboutbox = document.getElementById('aboutbox');
+
+  function row(label, value, plain) {
+    return '<div class="about-row"><b>' + escapeHTML(label) + '</b>' +
+      '<span' + (plain ? ' class="plain"' : '') + '>' + escapeHTML(value) + '</span></div>';
+  }
+
+  document.getElementById('brandwrap').onclick = function () {
+    aboutbox.className = 'open';
+    var body_ = document.getElementById('about-body');
+    body_.innerHTML = 'loading&hellip;';
+
+    xhr('GET', '/api/about', null, function (err, d) {
+      if (err || !d) { body_.innerHTML = row('Version', 'could not reach the server', true); return; }
+
+      var html = row('Version', d.version, true);
+
+      if (d.addresses && d.addresses.length) {
+        var list = [];
+        for (var i = 0; i < d.addresses.length; i++) {
+          list.push('http://' + d.addresses[i].address + ':' + d.port + '/');
+        }
+        html += row('Open on another device', list.join('\n'));
+      }
+
+      html += row('This room', wallId + (meta.title ? '  (' + meta.title + ')' : ''), true);
+      html += row('Notes on this server', d.notes + ' across ' + d.walls +
+        (d.walls === 1 ? ' room' : ' rooms'), true);
+
+      // Only the desktop app has a settings file; the bare server takes env vars.
+      if (d.settingsPath) {
+        html += row('Settings file — edit, then restart', d.settingsPath);
+      } else {
+        html += row('Settings', 'set PORT, HOST and NOTER_DB when starting the server', true);
+      }
+
+      html += row('Database', d.database);
+      html += row('Node', d.node, true);
+      body_.innerHTML = html;
+    });
+  };
+
+  document.getElementById('about-close').onclick = function () { aboutbox.className = ''; };
+
   // ------------------------------------------------------------- templates
   // Offered only on an empty wall. A template is a seeding action, not a mode:
   // once the notes land there is nothing left holding the layout together, so
@@ -1365,6 +1414,7 @@
     if (editingId) { cancelEdit(); return; }
     if (sharebox && sharebox.className === 'open') { sharebox.className = ''; return; }
     if (roombox && roombox.className === 'open') { roombox.className = ''; return; }
+    if (aboutbox && aboutbox.className === 'open') { aboutbox.className = ''; return; }
     if (kioskOn) setKiosk(false);
   };
 
