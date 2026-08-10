@@ -53,8 +53,9 @@
 
   // The URL is the wall. /w/<slug> names one; bare / is the default wall, which
   // is what a self-hosted box on a home network actually wants.
+  // Both /<room> and the longer /w/<room> alias resolve to the same wall.
   var wallId = 'main';
-  var m = window.location.pathname.match(/^\/w\/([a-z0-9][a-z0-9-]{0,47})\/?$/);
+  var m = window.location.pathname.match(/^\/(?:w\/)?([a-z0-9][a-z0-9-]{0,47})\/?$/);
   if (m) wallId = m[1];
 
   // -------------------------------------------------------------- identity
@@ -503,14 +504,97 @@
   var wallNameEl = document.getElementById('wallname');
   wallNameEl.innerHTML = escapeHTML(wallId);
 
-  // No Clipboard API: it does not exist on the old browsers this targets, and
-  // it needs a secure context, which a plain-HTTP LAN box is not. Showing the
-  // URL in a prompt lets the user copy it anywhere.
-  wallNameEl.onclick = function () {
-    var url = window.location.protocol + '//' + window.location.host +
-      (wallId === 'main' ? '/' : '/w/' + wallId);
-    window.prompt('Share this wall — copy the link:', url);
+  function wallPath() { return wallId === 'main' ? '/' : '/' + wallId; }
+
+  // Tapping the room chip answers "what rooms are there?", which is otherwise
+  // unanswerable: rooms exist by being visited, so nothing lists them until
+  // something asks the server.
+  var roombox = document.getElementById('roombox');
+
+  function openRooms() {
+    roombox.className = 'open';
+    var list = document.getElementById('room-list');
+    list.innerHTML = 'loading&hellip;';
+
+    xhr('GET', '/api/walls', null, function (err, data) {
+      if (err || !data || !data.walls) {
+        list.innerHTML = '<div class="room">could not load the room list</div>';
+        return;
+      }
+
+      var walls = data.walls.slice();
+      // A brand new room has no notes yet, so it will not come back from the
+      // server. Show it anyway — you are standing in it.
+      var listed = false;
+      for (var i = 0; i < walls.length; i++) if (walls[i].wall === wallId) listed = true;
+      if (!listed) walls.unshift({ wall: wallId, notes: 0 });
+
+      list.innerHTML = '';
+      for (var j = 0; j < walls.length; j++) {
+        (function (w) {
+          var row = document.createElement('div');
+          var here = w.wall === wallId;
+          row.className = 'room' + (here ? ' here' : '');
+          row.innerHTML = '<span class="count">' + w.notes +
+            (w.notes === 1 ? ' note' : ' notes') + '</span>' +
+            escapeHTML(w.wall) + (here ? '<span class="tag">you are here</span>' : '');
+          if (!here) {
+            row.onclick = function () {
+              window.location.href = w.wall === 'main' ? '/' : '/' + w.wall;
+            };
+          }
+          list.appendChild(row);
+        })(walls[j]);
+      }
+    });
+  }
+
+  wallNameEl.onclick = openRooms;
+  document.getElementById('room-close').onclick = function () { roombox.className = ''; };
+
+  function gotoTypedRoom() {
+    var raw = document.getElementById('room-name').value || '';
+    var name = raw.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
+    if (!name) return;
+    window.location.href = name === 'main' ? '/' : '/' + name;
+  }
+
+  document.getElementById('room-open').onclick = gotoTypedRoom;
+  document.getElementById('room-name').onkeydown = function (e) {
+    if ((e.keyCode || e.which) === 13) gotoTypedRoom();
   };
+
+  // The share overlay shows a QR for this wall on the host's LAN address, not
+  // on whatever hostname this browser happens to be using — "localhost" is
+  // useless to the tablet you are trying to set up.
+  var sharebox = document.getElementById('sharebox');
+
+  document.getElementById('share').onclick = function () {
+    var qrBox = document.getElementById('share-qr');
+    var urlBox = document.getElementById('share-url');
+    sharebox.className = 'open';
+    urlBox.innerHTML = 'finding this machine&rsquo;s address&hellip;';
+    qrBox.innerHTML = '';
+
+    xhr('GET', '/api/addresses', null, function (err, data) {
+      var host = window.location.host;
+      if (!err && data && data.addresses && data.addresses.length) {
+        host = data.addresses[0].address + ':' + data.port;
+      }
+      var url = 'http://' + host + wallPath();
+      urlBox.innerHTML = escapeHTML(url);
+      // Fetched as markup rather than an <img src>, so it inherits the page's
+      // colours and stays crisp at any size.
+      var r = new XMLHttpRequest();
+      r.open('GET', '/api/qr.svg?text=' + encodeURIComponent(url), true);
+      r.onreadystatechange = function () {
+        if (r.readyState === 4 && r.status === 200) qrBox.innerHTML = r.responseText;
+      };
+      r.send(null);
+    });
+  };
+
+  document.getElementById('share-close').onclick = function () { sharebox.className = ''; };
 
   document.getElementById('newwall').onclick = function () {
     xhr('POST', '/api/wall/new', {}, function (err, data) {
@@ -547,15 +631,43 @@
 
   // ---------------------------------------------------------- display mode
 
-  function setKiosk(on) {
+  var toastEl = null, toastTimer = null;
+
+  function toast(msg, ms) {
+    if (!toastEl) {
+      toastEl = document.createElement('div');
+      toastEl.id = 'toast';
+      body.appendChild(toastEl);
+    }
+    toastEl.innerHTML = escapeHTML(msg);
+    toastEl.style.display = 'block';
+    if (toastTimer) window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(function () {
+      if (toastEl) toastEl.style.display = 'none';
+    }, ms || 5000);
+  }
+
+  function setKiosk(on, announce) {
     kioskOn = on;
     if (on) addClass(body, 'kiosk'); else removeClass(body, 'kiosk');
     if (on) addClass(kioskBtn, 'on'); else removeClass(kioskBtn, 'on');
     store('attic.kiosk', on ? '1' : '');
+    if (on && announce) toast('Display mode — “exit display”, top left, or press Esc', 6000);
   }
 
-  kioskBtn.onclick = function () { setKiosk(!kioskOn); };
+  kioskBtn.onclick = function () { setKiosk(!kioskOn, true); };
   document.getElementById('kiosk-exit').onclick = function () { setKiosk(false); };
+
+  // A keyboard way out, for anything with a keyboard. Esc also closes the
+  // editor, so display mode only claims it when no note is open.
+  document.onkeydown = function (e) {
+    var code = e.keyCode || e.which;
+    if (code !== 27) return;
+    if (editingId) { closeEditor(); return; }
+    if (sharebox && sharebox.className === 'open') { sharebox.className = ''; return; }
+    if (roombox && roombox.className === 'open') { roombox.className = ''; return; }
+    if (kioskOn) setKiosk(false);
+  };
 
   // ------------------------------------------------------------ e-ink mode
   // For actual e-paper hardware (Boox, Kindle, reMarkable, Kobo), not an LCD

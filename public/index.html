@@ -35,9 +35,10 @@
 
 <div id="bar">
   <span id="brand">Attic</span>
-  <span id="wallname" title="this wall — tap to copy its link"></span>
+  <span id="wallname" title="this room — tap to see and switch rooms"></span>
   <button id="add" type="button">+ note</button>
   <button id="newwall" type="button">new wall</button>
+  <button id="share" type="button" title="show a QR to open this wall on another device">share</button>
   <span id="swatches"></span>
   <button id="zoomout" type="button" title="zoom out">&minus;</button>
   <span id="zoomlevel">100%</span>
@@ -55,7 +56,26 @@
 
 <!-- Display mode chrome: one button to add, one invisible corner to get out. -->
 <button id="kiosk-add" type="button">+</button>
-<button id="kiosk-exit" type="button" title="leave display mode"></button>
+<button id="kiosk-exit" type="button" title="leave display mode (Esc)">&times; exit display</button>
+
+<div id="roombox">
+  <h2>Rooms on this server</h2>
+  <div id="room-list">loading&hellip;</div>
+  <div id="room-go">
+    <input id="room-name" type="text" placeholder="room name" maxlength="48">
+    <button id="room-open" type="button">open</button>
+  </div>
+  <p id="room-hint">A room is created the moment you open it. Lower-case letters,
+     numbers and hyphens.</p>
+  <button id="room-close" type="button">close</button>
+</div>
+
+<div id="sharebox">
+  <div id="share-qr"></div>
+  <div id="share-url"></div>
+  <p id="share-hint">Point another device's camera at this, or type the address in.</p>
+  <button id="share-close" type="button">close</button>
+</div>
 
 <div id="editor">
   <textarea id="editor-text"></textarea>

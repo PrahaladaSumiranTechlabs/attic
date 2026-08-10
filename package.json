@@ -1,6 +1,6 @@
 {
   "name": "attic",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Attic - everything you forgot you had. A shared idea wall that runs on the tablet in your drawer.",
   "license": "AGPL-3.0-or-later",
   "homepage": "https://github.com/PrahaladaSumiranTechlabs/attic",
@@ -30,9 +30,15 @@
     "productName": "Attic",
     "files": [
       "server.js",
+      "lib/**/*",
       "desktop/**/*",
       "public/**/*",
       "package.json"
+    ],
+    "asarUnpack": [
+      "server.js",
+      "lib/**/*",
+      "public/**/*"
     ],
     "directories": {
       "output": "dist"

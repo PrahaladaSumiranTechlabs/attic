@@ -19,10 +19,64 @@
 const { app, BrowserWindow, Tray, Menu, shell, dialog, clipboard } = require('electron');
 const path = require('node:path');
 const os = require('node:os');
+const fs = require('node:fs');
 const { fork } = require('node:child_process');
 
-const PORT = Number(process.env.ATTIC_PORT || 8080);
-const ROOT = path.join(__dirname, '..');
+const net = require('node:net');
+
+// Settings live in a JSON file next to the database, editable from the tray.
+// A desktop app has no command line to pass env vars on, so "configurable"
+// has to mean a file somebody can actually open.
+const DEFAULTS = { port: 8080, host: '0.0.0.0', openWindowOnStart: true };
+let settings = Object.assign({}, DEFAULTS);
+let PORT = DEFAULTS.port;
+
+function settingsPath() { return path.join(app.getPath('userData'), 'settings.json'); }
+
+function loadSettings() {
+  try {
+    const raw = fs.readFileSync(settingsPath(), 'utf8');
+    settings = Object.assign({}, DEFAULTS, JSON.parse(raw));
+  } catch (e) {
+    settings = Object.assign({}, DEFAULTS);
+    try {
+      fs.mkdirSync(app.getPath('userData'), { recursive: true });
+      fs.writeFileSync(settingsPath(), JSON.stringify(settings, null, 2));
+    } catch (e2) { /* first run on a read-only profile; defaults still work */ }
+  }
+  // An explicit env var still wins, so scripts and CI can override.
+  if (process.env.ATTIC_PORT) settings.port = Number(process.env.ATTIC_PORT);
+  return settings;
+}
+
+// Rather than dying on "port in use" — the single most likely failure on a
+// machine that already runs something on 8080 — walk forward and report where
+// we landed.
+function findFreePort(start, tries) {
+  return new Promise((resolve) => {
+    let port = start;
+    let left = tries;
+    const attempt = () => {
+      const probe = net.createServer();
+      probe.once('error', () => {
+        probe.close();
+        if (--left <= 0) return resolve(start);
+        port++;
+        attempt();
+      });
+      probe.once('listening', () => probe.close(() => resolve(port)));
+      probe.listen(port, '0.0.0.0');
+    };
+    attempt();
+  });
+}
+
+// In a packaged build the app lives inside app.asar, and fork() cannot spawn a
+// child from inside an archive — the server would exit instantly with "cannot
+// find module". server.js and public/ are listed in asarUnpack so they exist as
+// real files; this rewrites the path to point at them.
+const ROOT = path.join(__dirname, '..').replace('app.asar' + path.sep, 'app.asar.unpacked' + path.sep)
+  .replace(/app\.asar$/, 'app.asar.unpacked');
 
 let win = null;
 let tray = null;
@@ -55,7 +109,7 @@ function startServer() {
   server = fork(path.join(ROOT, 'server.js'), [], {
     env: Object.assign({}, process.env, {
       PORT: String(PORT),
-      HOST: '0.0.0.0',
+      HOST: settings.host || '0.0.0.0',
       // Keep the database beside the user's data, not inside the app bundle,
       // which is read-only once packaged.
       NOTER_DB: path.join(app.getPath('userData'), 'attic.db'),
@@ -66,11 +120,25 @@ function startServer() {
   server.stdout.on('data', (d) => process.stdout.write('[server] ' + d));
   server.stderr.on('data', (d) => process.stderr.write('[server] ' + d));
 
+  // Without this, a fork that never spawns emits an unhandled 'error' and the
+  // app sits there looking alive with nothing behind it.
+  server.on('error', (err) => {
+    console.error('[attic] could not start the server process:', err);
+    if (quitting) return;
+    dialog.showErrorBox('Attic could not start',
+      'The server process failed to launch.\n\n' + err.message +
+      '\n\nLooked for: ' + path.join(ROOT, 'server.js'));
+    app.exit(1);
+  });
+
   server.on('exit', (code) => {
     if (quitting) return;
+    // Log before the dialog: showErrorBox is modal, so on a headless or
+    // unattended machine the reason would otherwise never be visible.
+    console.error('[attic] server exited with code ' + code);
     dialog.showErrorBox('Attic stopped',
       'The Attic server exited (code ' + code + '). The app will close.');
-    app.quit();
+    app.exit(1);
   });
 }
 
@@ -136,8 +204,33 @@ function createTray() {
     { label: 'Attic — ' + shareURL(), enabled: false },
     { type: 'separator' },
     { label: 'Open wall', click: () => { win.show(); win.focus(); } },
+    {
+      label: 'Connect a device (QR)…',
+      click: () => shell.openExternal('http://127.0.0.1:' + PORT + '/connect'),
+    },
     { label: 'Copy address for other devices', click: () => clipboard.writeText(shareURL()) },
     { label: 'Open in browser', click: () => shell.openExternal(shareURL()) },
+    { type: 'separator' },
+    {
+      label: 'Settings (port, host)…',
+      click: () => {
+        // Opening the file beats building a preferences window for two fields,
+        // and it is honest about where the setting actually lives.
+        shell.openPath(settingsPath()).then(() => {
+          dialog.showMessageBox({
+            type: 'info',
+            title: 'Attic settings',
+            message: 'Edit settings.json, then restart Attic for it to take effect.',
+            detail: settingsPath(),
+            buttons: ['OK'],
+          });
+        });
+      },
+    },
+    {
+      label: 'Restart Attic',
+      click: () => { app.relaunch(); quitting = true; app.exit(0); },
+    },
     { type: 'separator' },
     { label: 'Quit Attic', click: () => { quitting = true; app.quit(); } },
   ]);
@@ -155,7 +248,13 @@ if (!app.requestSingleInstanceLock()) {
     if (win) { win.show(); win.focus(); }
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
+    loadSettings();
+    PORT = await findFreePort(Number(settings.port) || DEFAULTS.port, 20);
+    if (PORT !== Number(settings.port)) {
+      console.log('[attic] port ' + settings.port + ' was busy; using ' + PORT);
+    }
+
     startServer();
     createWindow();
     createTray();

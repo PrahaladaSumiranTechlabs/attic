@@ -36,17 +36,52 @@ No dependencies, no build step, no install. Node 22.5+ (uses the built-in
 | `NOTER_DB` | `./noter.db` | database path |
 | `ATTIC_LANDING` | unset | `1` serves the landing page at `/` and the wall at `/wall` |
 
-## Walls
+## Rooms
 
-The URL is the wall.
+The URL is the room.
 
 - `/` — the default wall. What a home server wants.
-- `/w/<slug>` — a named wall, created by being visited. Like codeshare: open the
-  link and it exists. **new wall** mints a slug like `dusty-lantern-402` —
-  three words, because a wall name gets read aloud across a room at least as
-  often as it gets copied.
+- `/<room>` — e.g. `http://192.168.0.189:8080/kitchen`, created by being
+  visited. Like codeshare: open the link and it exists. `/w/<room>` is a longer
+  alias for the same thing.
+- **new wall** mints a slug like `dusty-lantern-402` — three words, because a
+  room name gets read aloud across a room at least as often as it gets copied.
 
-Walls are fully isolated: notes and presence never cross between them.
+Rooms are fully isolated: notes and presence never cross between them. A room
+name may not contain a dot, which is what stops one shadowing a static file —
+every asset has an extension, no room does. A handful of names (`api`, `legacy`,
+`connect`, …) are reserved.
+
+## Connecting a device
+
+Typing an IP address into an old tablet is the worst part of self-hosting, so
+there are three ways around it:
+
+- **share** in the toolbar shows a QR for the current room, pointed at this
+  machine's LAN address — not at whatever hostname your browser is using, since
+  `localhost` is no use to the tablet you are setting up.
+- **`/connect`** is a page listing every network address this machine has, each
+  with its own QR. Leave it open while you set tablets up.
+- The desktop app's tray menu has **Connect a device (QR)** and **Copy address**.
+
+The QR encoder is ours (`lib/qr.js`) — byte mode, error correction level M,
+versions 1–10, no dependencies. It is verified module-for-module against the
+Python `qrcode` reference by `scripts/check-qr.js`, because a QR that is subtly
+wrong looks exactly like a QR that works.
+
+## Settings
+
+The server takes environment variables. The desktop app has no command line to
+put them on, so it reads `settings.json` from its user-data folder — reachable
+from the tray under **Settings (port, host)**:
+
+```json
+{ "port": 8080, "host": "0.0.0.0", "openWindowOnStart": true }
+```
+
+If the port is already in use the app walks forward to the next free one and
+logs where it landed, rather than failing to start. `ATTIC_PORT` overrides the
+file, for scripts and CI.
 
 ## The three tiers
 
@@ -151,12 +186,20 @@ streaming is exactly what old hardware cannot do.
 ## Development
 
 ```bash
-node scripts/smoke-test.js
+node scripts/smoke-test.js       # API: delta sync, room isolation, tombstones,
+                                 # presence leakage, templates, /legacy has no JS
+node scripts/check-package.js    # everything server.js requires is in the build
+node scripts/check-electron-node.js   # Electron's Node can run the server
+node scripts/check-qr.js         # QR matches a reference implementation exactly
 ```
 
-Boots the real server on a scratch database and exercises the API — delta sync,
-wall isolation, tombstones, presence leakage, templates, and that `/legacy`
-still contains no `<script>` tag.
+Each of those exists because something broke:
+
+| Check | The failure it remembers |
+| --- | --- |
+| `check-package.js` | `lib/qr.js` shipped missing from the app; the window opened onto a server that had died at `require()` |
+| `check-electron-node.js` | Electron 33 bundles Node 20, which has no `node:sqlite`, so the forked server exited instantly |
+| `check-qr.js` | Format-info placement and timing-pattern overwrites produced QR codes that looked perfect and scanned as nothing |
 
 ```bash
 npm install
@@ -185,6 +228,15 @@ signed macOS `.dmg` from Linux.
 - **Accounts and private walls.** Needed before hosting this for other people.
 - **Images and attachments.** Text notes only.
 - **Undo.**
+
+## Hosting and support
+
+Attic is free and self-hosted, and there is nothing to upgrade to. If you want
+it hosted for you — no machine to spare, a classroom, a lab — write to
+**hello@pstechlabs.com** and we will sort something out.
+
+If it saved you buying a tablet, [buy us a coffee](https://buymeacoffee.com/pstechlabs).
+Entirely optional; it changes nothing about what you get.
 
 ## Licence
 

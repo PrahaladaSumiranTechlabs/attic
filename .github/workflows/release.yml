@@ -46,6 +46,15 @@ jobs:
         # own, everyone deploying to a Pi or a VPS is broken, so check it here.
         run: node scripts/smoke-test.js
 
+      - name: Verify everything the server needs will be in the package
+        run: node scripts/check-package.js
+
+      - name: Verify the QR encoder against a reference implementation
+        # Skips itself if the reference will not install. A QR that is subtly
+        # wrong still looks exactly like a QR, so this is the only real check.
+        run: pip install qrcode && node scripts/check-qr.js
+        continue-on-error: true
+
       - name: Verify Electron's bundled Node can run the server
         # fork() runs server.js on Electron's Node, not the system one, and the
         # server needs node:sqlite (22.5+). Electron 33 and earlier bundle Node

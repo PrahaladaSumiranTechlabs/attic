@@ -11,8 +11,10 @@
 
 const http = require('node:http');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
+const qr = require('./lib/qr.js');
 
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -138,6 +140,14 @@ const q = {
 
 const WALL_RE = /^[a-z0-9][a-z0-9-]{0,47}$/;
 const DEFAULT_WALL = 'main';
+
+// Names a room may not take, because the router would otherwise never reach the
+// real thing behind them.
+const RESERVED = new Set([
+  'api', 'w', 'legacy', 'landing', 'wall', 'public', 'assets', 'static',
+  'index', 'favicon', 'icon', 'health', 'admin', 'login', 'signup', 'about',
+  'connect', 'qr', 'support', 'help',
+]);
 
 function cleanWall(v) {
   const s = String(v || '').toLowerCase();
@@ -291,6 +301,24 @@ function rowToNote(r) {
   };
 }
 
+// The whole point of self-hosting is the other devices, so the address they need
+// has to be discoverable without anyone running ipconfig.
+function lanAddresses() {
+  const nets = os.networkInterfaces();
+  const out = [];
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name] || []) {
+      if ((net.family !== 'IPv4' && net.family !== 4) || net.internal) continue;
+      out.push({ name, address: net.address });
+    }
+  }
+  // Private ranges first: a VPN or container bridge would otherwise win the
+  // top slot and hand out an address nothing on the LAN can reach.
+  const isPrivate = (a) => /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(a);
+  out.sort((a, b) => (isPrivate(b.address) ? 1 : 0) - (isPrivate(a.address) ? 1 : 0));
+  return out;
+}
+
 function esc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;')
@@ -429,7 +457,7 @@ const server = http.createServer((req, res) => {
   if (p === '/api/wall/new' && req.method === 'POST') {
     let slug = newSlug();
     for (let i = 0; i < 8 && q.countLive.get(slug).n > 0; i++) slug = newSlug();
-    sendJSON(res, 200, { ok: true, wall: slug, url: '/w/' + slug });
+    sendJSON(res, 200, { ok: true, wall: slug, url: '/' + slug });
     return;
   }
 
@@ -536,6 +564,74 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // QR for any short string. Used by the share overlay and the connect page:
+  // pointing a tablet camera at a screen beats typing an IP address by hand.
+  if (p === '/api/qr.svg' && req.method === 'GET') {
+    const text = String(u.searchParams.get('text') || '').slice(0, 200);
+    try {
+      const svg = qr.toSVG(text, { quiet: 2 });
+      res.writeHead(200, {
+        'Content-Type': 'image/svg+xml; charset=utf-8',
+        'Content-Length': Buffer.byteLength(svg),
+        'Cache-Control': 'no-cache',
+      });
+      res.end(svg);
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'text/plain' }).end('cannot encode: ' + e.message);
+    }
+    return;
+  }
+
+  if (p === '/api/addresses' && req.method === 'GET') {
+    sendJSON(res, 200, { port: PORT, addresses: lanAddresses() });
+    return;
+  }
+
+  // A page you can leave open on the host machine while you set up tablets.
+  if (p === '/connect' && req.method === 'GET') {
+    const addrs = lanAddresses();
+    const room = cleanWall(u.searchParams.get('w'));
+    const suffix = room === DEFAULT_WALL ? '/' : '/' + room;
+
+    let html =
+      '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+      '<title>Connect a device — Attic</title><style>' +
+      'body{margin:0;padding:32px 20px;background:#f4f1ea;color:#23211c;' +
+      'font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;text-align:center}' +
+      'h1{font-size:23px;margin:0 0 4px}p.sub{color:#6f6a5e;margin:0 0 26px;font-size:14px}' +
+      '.card{display:inline-block;margin:10px;padding:20px 22px;background:#fff;' +
+      'border:1px solid #e2ddd0;border-radius:9px;vertical-align:top}' +
+      '.card svg{width:210px;height:210px;display:block;margin:0 auto 12px}' +
+      '.url{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;word-break:break-all}' +
+      '.iface{font-size:11.5px;color:#9a9384;text-transform:uppercase;letter-spacing:.07em;margin-top:5px}' +
+      '.none{color:#b03030}</style></head><body>' +
+      '<h1>Point a camera at one of these</h1>' +
+      '<p class="sub">Any device on the same network can open the wall this way — ' +
+      'no app to install.</p>';
+
+    if (!addrs.length) {
+      html += '<p class="none">No network address found. This machine may not be ' +
+        'connected to a network, in which case only this computer can reach the wall.</p>';
+    }
+
+    for (const a of addrs) {
+      const url = 'http://' + a.address + ':' + PORT + suffix;
+      html += '<div class="card">' + qr.toSVG(url, { quiet: 2 }) +
+        '<div class="url">' + esc(url) + '</div>' +
+        '<div class="iface">' + esc(a.name) + '</div></div>';
+    }
+
+    html += '</body></html>';
+    res.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Content-Length': Buffer.byteLength(html),
+      'Cache-Control': 'no-cache',
+    });
+    res.end(html);
+    return;
+  }
+
   if (p === '/api/health') {
     sendJSON(res, 200, {
       ok: true,
@@ -546,9 +642,14 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Any /w/<slug> serves the same app; the client reads the slug from the URL.
-  // Visiting a wall is what creates it, exactly like codeshare.
-  if (/^\/w\/[a-z0-9][a-z0-9-]{0,47}\/?$/.test(p)) {
+  // Rooms live at the bare path — <ip:port>/<room> — because that is what
+  // somebody types into a tablet by hand. /w/<room> stays as a longer alias.
+  //
+  // A room name may not contain a dot, which is what keeps this from shadowing
+  // static files: every asset has an extension, no room does.
+  const bare = p.match(/^\/([a-z0-9][a-z0-9-]{0,47})\/?$/);
+  const aliased = p.match(/^\/w\/([a-z0-9][a-z0-9-]{0,47})\/?$/);
+  if (aliased || (bare && bare[1].indexOf('.') === -1 && !RESERVED.has(bare[1]))) {
     serveStatic(res, '/index.html');
     return;
   }

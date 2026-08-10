@@ -344,19 +344,54 @@ body.kiosk #kiosk-add {
   cursor: pointer;
 }
 
-/* Deliberately invisible: an escape hatch, not a control. */
+/* Quiet, but never invisible. An escape hatch nobody can find is not an escape
+   hatch — this stays legible enough to spot when you go looking for it. */
 body.kiosk #kiosk-exit {
   display: block;
   position: fixed;
-  left: 0;
-  top: 0;
-  width: 46px;
-  height: 46px;
-  padding: 0;
-  border: 0;
-  background: transparent;
+  left: 12px;
+  top: 12px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #6f6a5e;
+  font-size: 13px;
   z-index: 1001;
-  cursor: default;
+  cursor: pointer;
+}
+
+body.kiosk #kiosk-exit:active { background: #fff; }
+
+body.eink.kiosk #kiosk-exit {
+  background: #fff;
+  color: #000;
+  border: 2px solid #000;
+  border-radius: 0;
+}
+
+/* Shown for a few seconds on entering display mode, so the way out is learned
+   once rather than hunted for. */
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%);
+  padding: 11px 18px;
+  background: rgba(35, 33, 28, 0.92);
+  color: #fff;
+  font-size: 13.5px;
+  border-radius: 20px;
+  z-index: 3000;
+}
+
+body.eink #toast {
+  background: #fff;
+  color: #000;
+  border: 2px solid #000;
+  border-radius: 0;
 }
 
 body.kiosk .note { cursor: default; }
@@ -481,6 +516,138 @@ body.eink #kiosk-add {
 }
 
 body.eink #overview-hint { background: #fff; color: #000; border-top: 2px solid #000; }
+
+/* ---------------------------------------------------------------- rooms */
+
+#roombox {
+  display: none;
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: 320px;
+  margin-left: -170px;
+  margin-top: -200px;
+  padding: 20px 22px;
+  background: #fff;
+  border: 1px solid #bbb;
+  border-radius: 6px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.25);
+  z-index: 2500;
+}
+
+#roombox.open { display: block; }
+#roombox h2 { margin: 0 0 12px; font-size: 16px; }
+
+#room-list {
+  max-height: 210px;
+  overflow-y: auto;
+  border: 1px solid #eee;
+  border-radius: 4px;
+  margin-bottom: 12px;
+}
+
+.room {
+  padding: 9px 11px;
+  border-bottom: 1px solid #f0ece0;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.room:last-child { border-bottom: 0; }
+.room:hover { background: #fdfbf5; }
+.room.here { background: #fdf6e0; font-weight: bold; cursor: default; }
+.room .count { float: right; color: #aaa; font-weight: normal; font-size: 12px; }
+.room .tag { color: #c8a020; font-weight: normal; font-size: 11px; margin-left: 6px; }
+
+#room-name {
+  width: 176px;
+  font-size: 15px;
+  padding: 7px 9px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-family: inherit;
+}
+
+#room-open {
+  font-size: 15px;
+  padding: 7px 16px;
+  margin-left: 6px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+
+#room-hint { font-size: 11.5px; color: #999; line-height: 1.45; margin: 10px 0 14px; }
+
+#room-close {
+  font-size: 15px;
+  min-height: 34px;
+  padding: 6px 18px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+
+body.eink #roombox { border: 2px solid #000; border-radius: 0; box-shadow: none; }
+body.eink #room-list { border: 2px solid #000; border-radius: 0; }
+body.eink .room.here { background: #fff; }
+body.eink #room-hint { color: #000; }
+body.eink #room-name, body.eink #room-open, body.eink #room-close {
+  border: 2px solid #000;
+  border-radius: 0;
+}
+
+/* ---------------------------------------------------------------- share */
+
+#sharebox {
+  display: none;
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: 300px;
+  margin-left: -160px;
+  margin-top: -215px;
+  padding: 20px;
+  text-align: center;
+  background: #fff;
+  border: 1px solid #bbb;
+  border-radius: 6px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.25);
+  z-index: 2500;
+}
+
+#sharebox.open { display: block; }
+#share-qr svg { width: 232px; height: 232px; display: block; margin: 0 auto 14px; }
+
+#share-url {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 14px;
+  word-break: break-all;
+  color: #23211c;
+}
+
+#share-hint { font-size: 12px; color: #999; margin: 10px 0 14px; }
+
+#share-close {
+  font-size: 15px;
+  min-height: 34px;
+  padding: 6px 18px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+
+body.eink #sharebox {
+  border: 2px solid #000;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+body.eink #share-hint, body.eink #share-url { color: #000; }
+body.eink #share-close { border: 2px solid #000; border-radius: 0; }
 
 /* --------------------------------------------------------------- editor */
 
