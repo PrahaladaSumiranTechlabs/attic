@@ -261,6 +261,84 @@ function shareToken(slug) {
 
 const DEFAULT_COLUMNS = ['To do', 'Doing', 'Done'];
 
+// Board geometry, mirroring the client's. Only used when converting a room
+// between layouts, so a board turned back into a free wall keeps the shape it
+// had on screen.
+const COL_W = 300;
+const COL_GAP = 22;
+const BOARD_PAD = 40;
+const LANE_HEAD = 54;
+const CARD_GAP = 12;
+const CARD_INSET = 12;
+
+// Switching a room to columns used to leave every note with an empty column,
+// which the client shows as "everything in the first column, in no order" —
+// throwing away an arrangement somebody may have spent real time on.
+//
+// People arrange a free wall in rough columns long before they ask for a board.
+// So read the arrangement that is already there: split notes into columns by
+// where they sit horizontally, and order them by how far down they are.
+function convertToColumns(slug, columns) {
+  const notes = q.live.all(slug).map(rowToNote);
+  if (!notes.length || !columns.length) return;
+
+  const xs = notes.map((n) => n.x);
+  const min = Math.min(...xs);
+  const max = Math.max(...xs);
+  const span = Math.max(1, max - min);
+
+  const buckets = columns.map(() => []);
+  for (const n of notes) {
+    // A wall where every note shares an x collapses to the first column, which
+    // is the honest answer: there were no columns to read.
+    let i = Math.floor(((n.x - min) / span) * columns.length);
+    if (i >= columns.length) i = columns.length - 1;
+    if (i < 0) i = 0;
+    buckets[i].push(n);
+  }
+
+  buckets.forEach((bucket, i) => {
+    bucket.sort((a, b) => a.y - b.y || a.seq - b.seq);
+    bucket.forEach((n, ord) => {
+      n.col = columns[i];
+      n.ord = ord;
+      n.seq = nextSeq();
+      writeNote(n);
+    });
+  });
+}
+
+// The reverse: cards carry no meaningful x/y, so turning a board back into a
+// free wall would pile every note at the origin. Give them the coordinates they
+// appeared to have, so the wall looks like the board did.
+function convertToFreeWall(slug, columns) {
+  const notes = q.live.all(slug).map(rowToNote);
+  if (!notes.length) return;
+
+  const byColumn = {};
+  for (const n of notes) {
+    const key = n.col || (columns[0] || '');
+    (byColumn[key] = byColumn[key] || []).push(n);
+  }
+
+  Object.keys(byColumn).forEach((col) => {
+    let i = columns.indexOf(col);
+    if (i === -1) i = 0;
+    const x = BOARD_PAD + i * (COL_W + COL_GAP) + CARD_INSET;
+    let y = LANE_HEAD + CARD_GAP;
+
+    byColumn[col].sort((a, b) => a.ord - b.ord || a.seq - b.seq);
+    for (const n of byColumn[col]) {
+      n.x = x;
+      n.y = y;
+      n.w = COL_W - CARD_INSET * 2;
+      y += n.h + CARD_GAP;
+      n.seq = nextSeq();
+      writeNote(n);
+    }
+  });
+}
+
 function wallMeta(slug) {
   const row = q.getMeta.get(slug);
   if (!row) return { wall: slug, title: '', layout: 'free', columns: [], seq: 0 };
@@ -777,11 +855,32 @@ const server = http.createServer((req, res) => {
       if (typeof columns === 'string') {
         try { columns = JSON.parse(columns); } catch (e) { columns = undefined; }
       }
-      sendJSON(res, 200, { ok: true, meta: saveMeta(wallId, {
+
+      // Captured before the write: converting back to a free wall needs the
+      // columns the board actually had, not whatever it has after saving.
+      const before = wallMeta(wallId);
+      const meta = saveMeta(wallId, {
         title: input.title,
         layout: input.layout,
         columns,
-      }) });
+      });
+
+      // Only on an actual change of layout. Re-running this on a rename would
+      // reshuffle a board somebody had already arranged by hand.
+      if (before.layout !== meta.layout) {
+        if (meta.layout === 'kanban') {
+          convertToColumns(wallId, meta.columns.length ? meta.columns : DEFAULT_COLUMNS);
+        } else {
+          convertToFreeWall(wallId, before.columns.length ? before.columns : DEFAULT_COLUMNS);
+        }
+      }
+
+      sendJSON(res, 200, {
+        ok: true,
+        meta,
+        converted: before.layout !== meta.layout,
+        wasLayout: before.layout,
+      });
     });
     return;
   }

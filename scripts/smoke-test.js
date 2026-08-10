@@ -140,6 +140,52 @@ async function waitForServer(tries = 60) {
     check('removing a link leaves both notes alone',
       afterUnlink.body.notes.filter((n) => !n.deleted).length === 2);
 
+    console.log('converting a free wall to columns');
+    // Three visual groups, the way somebody actually arranges a wall before
+    // deciding they want a board.
+    const placed = [
+      ['ca', 200, 150, 'left top'], ['cb', 220, 400, 'left bottom'],
+      ['cc', 700, 180, 'mid top'], ['cd', 720, 430, 'mid bottom'],
+      ['ce', 1200, 200, 'right top'], ['cf', 1230, 520, 'right bottom'],
+    ];
+    for (const [id, x, y, text] of placed) {
+      await post('/api/note', { id, wall: 'conv-wall', x, y, text });
+    }
+
+    const toBoard = await post('/api/wall',
+      { wall: 'conv-wall', layout: 'kanban', columns: ['To do', 'Doing', 'Done'] });
+    check('switching layout reports a conversion', toBoard.body.converted === true);
+
+    const converted = await get('/api/state?since=-1&wall=conv-wall&id=smoke');
+    const inCol = (c) => converted.body.notes.filter((n) => n.col === c)
+      .sort((a, b) => a.ord - b.ord).map((n) => n.text);
+
+    check('no note is left without a column',
+      converted.body.notes.every((n) => n.col !== ''));
+    check('the left group becomes the first column',
+      inCol('To do').join(',') === 'left top,left bottom', inCol('To do').join(','));
+    check('the middle group becomes the second column',
+      inCol('Doing').join(',') === 'mid top,mid bottom', inCol('Doing').join(','));
+    check('the right group becomes the third column',
+      inCol('Done').join(',') === 'right top,right bottom', inCol('Done').join(','));
+
+    // Cards carry no meaningful x/y, so going back must not pile them at 0,0.
+    const toFree = await post('/api/wall', { wall: 'conv-wall', layout: 'free' });
+    check('switching back reports a conversion', toFree.body.converted === true);
+    const freed = await get('/api/state?since=-1&wall=conv-wall&id=smoke');
+    check('notes get real coordinates back, not the origin',
+      freed.body.notes.every((n) => n.x > 0 || n.y > 0));
+    check('the columns are still readable as columns',
+      new Set(freed.body.notes.map((n) => n.x)).size === 3);
+
+    // A rename must not reshuffle a board somebody arranged by hand.
+    await post('/api/wall', { wall: 'conv-wall', layout: 'kanban' });
+    const beforeRename = await get('/api/state?since=-1&wall=conv-wall&id=smoke');
+    await post('/api/wall', { wall: 'conv-wall', title: 'Still The Same Board' });
+    const afterRename = await get('/api/state?since=-1&wall=conv-wall&id=smoke');
+    const sig = (r) => r.body.notes.map((n) => n.id + ':' + n.col + ':' + n.ord).sort().join('|');
+    check('setting a title leaves the arrangement alone', sig(beforeRename) === sig(afterRename));
+
     console.log('read-only share links');
     await post('/api/note', { id: 'sa', wall: 'share-wall', x: 20, y: 20, text: 'shared note' });
     await post('/api/wall', { wall: 'share-wall', title: 'Shared Wall' });

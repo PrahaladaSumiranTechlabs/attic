@@ -161,6 +161,13 @@ where it sits; dropping a card elsewhere changes which column owns it and
 renumbers the destination. Cards are sized by their content, and the manual
 resize grip is hidden because the column owns the geometry.
 
+**Switching between them reads the arrangement you already made.** People lay a
+free wall out in rough columns long before they ask for a board, so converting
+to columns splits notes by where they sit horizontally and orders them by how
+far down they are — left group to the first column, and so on. Converting back
+gives cards real coordinates in the shape the board had, rather than piling them
+at the origin. It round-trips.
+
 Both layouts share one `notes` table. Freeform notes leave `col`/`ord` alone and
 cards leave `x`/`y` alone, so switching a room back and forth loses nothing. A
 card whose column was renamed or removed shows up in the first column rather
