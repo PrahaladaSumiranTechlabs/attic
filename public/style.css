@@ -767,39 +767,194 @@ body.eink #share-hint, body.eink #share-url { color: #000; }
 body.eink #share-close { border: 2px solid #000; border-radius: 0; }
 
 /* --------------------------------------------------------------- editor */
+/* You type in the note itself. The textarea is positioned over the note and
+   styled to match it, so editing looks like writing on the note rather than
+   filling in a form about it. */
 
-#editor {
+.note-edit {
+  display: none;
+  position: absolute;
+  z-index: 600;
+  margin: 0;
+  padding: 12px;
+  box-sizing: border-box;
+  border: 1px solid rgba(0, 0, 0, 0.28);
+  border-radius: 2px;
+  box-shadow: 3px 5px 14px rgba(0, 0, 0, 0.22);
+  font-family: inherit;
+  font-size: 16px; /* under 16px, iOS zooms the page on focus */
+  line-height: 1.32;
+  resize: none;
+  overflow: auto;
+  outline: none;
+  -webkit-appearance: none;
+}
+
+.note-edit.open { display: block; }
+
+/* The note underneath is hidden while its textarea sits on top, so text does
+   not show through doubled. */
+.note.editing .note-body { visibility: hidden; }
+
+#noteactions {
   display: none;
   position: fixed;
-  left: 50%;
-  top: 50%;
-  width: 300px;
-  margin-left: -160px;
-  margin-top: -120px;
-  padding: 10px;
-  background: #fff;
-  border: 1px solid #bbb;
-  border-radius: 4px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
-  z-index: 2000;
+  z-index: 1400;
+  padding: 5px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
+  white-space: nowrap;
 }
 
-#editor.open { display: block; }
+#noteactions.open { display: block; }
 
-#editor-text {
-  width: 100%;
-  height: 150px;
-  box-sizing: border-box;
-  font-size: 16px; /* under 16px, iOS zooms the page on focus */
-  font-family: inherit;
-  padding: 8px;
+#noteactions button {
+  font-size: 13px;
+  min-height: 32px;
+  padding: 5px 11px;
+  margin-right: 4px;
   border: 1px solid #ccc;
-  border-radius: 3px;
-  resize: none;
+  border-radius: 4px;
+  background: #fff;
+  color: #333;
+  cursor: pointer;
 }
 
-#editor-bar { margin-top: 8px; }
-#editor-del { float: right; margin-right: 0; color: #b03030; }
+#noteactions button:last-child { margin-right: 0; }
+#noteactions button:active { background: #eee; }
+#act-del { color: #b03030; }
+
+body.eink .note-edit {
+  background: #fff !important;
+  color: #000;
+  border: 2px solid #000;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+body.eink #noteactions { background: #fff; border: 2px solid #000; border-radius: 0; box-shadow: none; }
+body.eink #noteactions button { border: 2px solid #000; border-radius: 0; color: #000; }
+
+/* ------------------------------------------------------- read-only view */
+/* What a share link opens. Nothing to press by accident: no toolbar, no
+   minimap, no grips, no empty-state prompt to add the first note. */
+
+body.viewonly #bar,
+body.viewonly #minimap,
+body.viewonly #empty,
+body.viewonly #noteactions,
+body.viewonly .note-grip { display: none; }
+
+body.viewonly #canvas, body.viewonly .note { cursor: default; }
+body.viewonly .note { -webkit-user-select: text; -moz-user-select: text; user-select: text; }
+
+#viewbar { display: none; }
+
+body.viewonly #viewbar {
+  display: block;
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  padding: 7px 9px;
+  background: rgba(255, 255, 255, 0.93);
+  border: 1px solid #e2ddd0;
+  border-radius: 22px;
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.12);
+  white-space: nowrap;
+  z-index: 1400;
+}
+
+#view-title {
+  font-size: 13px;
+  font-weight: bold;
+  color: #8a6d1f;
+  margin: 0 10px 0 8px;
+}
+
+#viewbar button {
+  font-size: 13px;
+  min-height: 30px;
+  padding: 5px 13px;
+  margin-left: 4px;
+  border: 1px solid #ddd;
+  border-radius: 15px;
+  background: #fff;
+  color: #444;
+  cursor: pointer;
+}
+
+#viewbar button.on { background: #ffe89a; border-color: #c8a020; }
+
+/* Greyscale for a wall shown on someone else's screen, a projector, or a
+   monochrome panel. Degrades to plain colour on browsers without filters,
+   which is a perfectly good outcome. */
+body.mono #wall { -webkit-filter: grayscale(100%); filter: grayscale(100%); }
+
+/* ---------------------------------------------------------------- share */
+
+#share-mode { margin-bottom: 14px; }
+
+#share-mode button {
+  font-size: 13px;
+  min-height: 30px;
+  padding: 5px 12px;
+  margin: 0 3px;
+  border: 1px solid #ddd;
+  border-radius: 15px;
+  background: #fff;
+  color: #666;
+  cursor: pointer;
+}
+
+#share-mode button.on { background: #ffe89a; border-color: #c8a020; color: #6b530f; font-weight: bold; }
+
+body.eink #viewbar, body.eink #share-mode button {
+  background: #fff;
+  border: 2px solid #000;
+  border-radius: 0;
+  color: #000;
+  box-shadow: none;
+}
+
+body.eink #viewbar button { border: 2px solid #000; border-radius: 0; color: #000; }
+body.eink #viewbar button.on, body.eink #share-mode button.on { background: #000; color: #fff; }
+body.eink #view-title { color: #000; }
+
+/* ---------------------------------------------------------------- links */
+
+#links {
+  position: absolute;
+  left: 0;
+  top: 0;
+  /* Lines are decoration until you aim at one; the hit strip below opts back in. */
+  pointer-events: none;
+  overflow: visible;
+}
+
+.link {
+  stroke: #b9a878;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+/* Invisible and fat, so a 2px line is still reachable with a finger. */
+.link-hit {
+  stroke: transparent;
+  stroke-width: 18;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.link-hit:hover + .link, .link-hit:hover { stroke: rgba(176, 48, 48, 0.25); }
+
+body.eink .link { stroke: #000; stroke-width: 3; }
+
+/* While picking the other end of a link, every note is a target. */
+body.linking .note { cursor: crosshair; outline: 2px dashed rgba(138, 109, 31, 0.45); }
+body.linking .note-grip { display: none; }
 
 #noscript {
   position: fixed;

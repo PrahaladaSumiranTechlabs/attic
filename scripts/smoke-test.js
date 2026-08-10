@@ -111,6 +111,63 @@ async function waitForServer(tries = 60) {
     check('delete propagates as a tombstone',
       afterDel.body.notes.some((n) => n.id === 'smoke1' && n.deleted === true));
 
+    console.log('links between notes');
+    await post('/api/note', { id: 'la', wall: 'link-wall', x: 10, y: 10, text: 'A' });
+    await post('/api/note', { id: 'lb', wall: 'link-wall', x: 300, y: 10, text: 'B' });
+    const link = await post('/api/link', { wall: 'link-wall', a: 'la', b: 'lb' });
+    check('two notes can be linked', link.body.ok === true && !!link.body.id);
+
+    const linkState = await get('/api/state?since=-1&wall=link-wall&id=smoke');
+    check('the link comes back with the wall', linkState.body.links.length === 1);
+
+    const dupe = await post('/api/link', { wall: 'link-wall', a: 'lb', b: 'la' });
+    check('a link has no direction, so B-A is the same link',
+      dupe.body.existing === true && dupe.body.id === link.body.id);
+
+    const self = await post('/api/link', { wall: 'link-wall', a: 'la', b: 'la' });
+    check('a note cannot link to itself', self.status === 400);
+
+    // A line to a note that no longer exists is worse than no line.
+    await post('/api/note/delete', { id: 'lb', wall: 'link-wall' });
+    const afterNoteGone = await get('/api/state?since=-1&wall=link-wall&id=smoke');
+    check('deleting a note removes its links', afterNoteGone.body.links.length === 0);
+
+    await post('/api/note', { id: 'lc', wall: 'link-wall', x: 500, y: 10, text: 'C' });
+    const link2 = await post('/api/link', { wall: 'link-wall', a: 'la', b: 'lc' });
+    await post('/api/link/delete', { wall: 'link-wall', id: link2.body.id });
+    const afterUnlink = await get('/api/state?since=-1&wall=link-wall&id=smoke');
+    check('a link can be removed on its own', afterUnlink.body.links.length === 0);
+    check('removing a link leaves both notes alone',
+      afterUnlink.body.notes.filter((n) => !n.deleted).length === 2);
+
+    console.log('read-only share links');
+    await post('/api/note', { id: 'sa', wall: 'share-wall', x: 20, y: 20, text: 'shared note' });
+    await post('/api/wall', { wall: 'share-wall', title: 'Shared Wall' });
+    const share = await post('/api/wall/share', { wall: 'share-wall' });
+    check('a room can mint a share link', share.body.ok === true && !!share.body.token);
+    check('the share link points at /v/', share.body.url === '/v/' + share.body.token);
+
+    const again = await post('/api/wall/share', { wall: 'share-wall' });
+    check('the share link is stable across calls', again.body.token === share.body.token);
+
+    const view = await get('/api/view?token=' + share.body.token + '&since=-1');
+    check('the view endpoint serves the wall', view.body.readOnly === true &&
+      view.body.notes.some((n) => n.text === 'shared note'));
+    check('the view keeps the room name', view.body.meta.title === 'Shared Wall');
+
+    // The whole point of the token: a viewer must not learn the room's address,
+    // or it could just call the ordinary write API with it.
+    const payload = JSON.stringify(view.body);
+    check('the view never reveals the room address', payload.indexOf('share-wall') === -1);
+    check('notes carry no room field in the view',
+      view.body.notes.every((n) => n.wall === undefined));
+
+    const badToken = await fetch(BASE + '/api/view?token=notarealtokenxx');
+    check('an unknown share link is refused', badToken.status === 404);
+
+    const viewPage = await fetch(BASE + '/v/' + share.body.token);
+    check('the share URL serves the app', viewPage.status === 200);
+
     console.log('presence');
     await get('/api/state?since=-1&wall=main&id=peerX&name=tablet&vx=0&vy=0&vw=800&vh=600');
     const seen = await get('/api/state?since=-1&wall=main&id=peerY&name=desk&vx=0&vy=0&vw=800&vh=600');

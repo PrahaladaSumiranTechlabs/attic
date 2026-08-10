@@ -94,6 +94,18 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS state (k TEXT PRIMARY KEY, v INTEGER NOT NULL);
   INSERT OR IGNORE INTO state (k, v) VALUES ('seq', 0);
 
+  -- Connections between two notes. Kept as their own rows rather than a field
+  -- on a note, because a link belongs to neither end of it.
+  CREATE TABLE IF NOT EXISTS links (
+    id      TEXT PRIMARY KEY,
+    wall    TEXT NOT NULL,
+    a       TEXT NOT NULL,
+    b       TEXT NOT NULL,
+    seq     INTEGER NOT NULL,
+    deleted INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX IF NOT EXISTS links_wall ON links(wall, seq);
+
   -- A room only needs a row here once it has a name or a layout; rooms still
   -- come into being by being visited, and an unconfigured one has no row.
   CREATE TABLE IF NOT EXISTS walls (
@@ -123,6 +135,12 @@ if (cols.indexOf('col') === -1) {
   console.log('migrated: notes gained column placement');
 }
 
+const wallCols = db.prepare(`PRAGMA table_info(walls)`).all().map((c) => c.name);
+if (wallCols.length && wallCols.indexOf('view_token') === -1) {
+  db.exec(`ALTER TABLE walls ADD COLUMN view_token TEXT NOT NULL DEFAULT ''`);
+  console.log('migrated: rooms gained share tokens');
+}
+
 db.exec(`CREATE INDEX IF NOT EXISTS notes_wall ON notes(wall, seq)`);
 
 // `seq` stays global rather than per-wall. Every write advances it, so a client
@@ -150,6 +168,21 @@ const q = {
   `),
   softDelete: db.prepare(`UPDATE notes SET deleted = 1, seq = ? WHERE id = ? AND wall = ?`),
 
+  linksSince: db.prepare(`SELECT * FROM links WHERE wall = ? AND seq > ? ORDER BY seq`),
+  linksLive: db.prepare(`SELECT * FROM links WHERE wall = ? AND deleted = 0 ORDER BY seq`),
+  linkInsert: db.prepare(`INSERT INTO links (id, wall, a, b, seq, deleted) VALUES (?, ?, ?, ?, ?, 0)`),
+  linkExists: db.prepare(`
+    SELECT id FROM links WHERE wall = ? AND deleted = 0
+      AND ((a = ? AND b = ?) OR (a = ? AND b = ?))
+  `),
+  linkDelete: db.prepare(`UPDATE links SET deleted = 1, seq = ? WHERE id = ? AND wall = ?`),
+  // A note that goes away takes its connections with it; a line to nothing is
+  // worse than no line.
+  linksForNote: db.prepare(`
+    UPDATE links SET deleted = 1, seq = ? WHERE wall = ? AND deleted = 0 AND (a = ? OR b = ?)
+  `),
+  dropLinks: db.prepare(`DELETE FROM links WHERE wall = ?`),
+
   getMeta: db.prepare(`SELECT * FROM walls WHERE wall = ?`),
   setMeta: db.prepare(`
     INSERT INTO walls (wall, title, layout, columns, seq)
@@ -161,7 +194,35 @@ const q = {
   allMeta: db.prepare(`SELECT * FROM walls`),
   dropNotes: db.prepare(`DELETE FROM notes WHERE wall = ?`),
   dropMeta: db.prepare(`DELETE FROM walls WHERE wall = ?`),
+  byToken: db.prepare(`SELECT * FROM walls WHERE view_token = ? AND view_token != ''`),
+  setToken: db.prepare(`
+    INSERT INTO walls (wall, title, layout, columns, seq, view_token)
+    VALUES (?, '', 'free', '[]', ?, ?)
+    ON CONFLICT(wall) DO UPDATE SET view_token = excluded.view_token, seq = excluded.seq
+  `),
 };
+
+// A read-only link is addressed by token, never by room name. The viewer is
+// never told which room it is looking at, so a guest cannot turn a view link
+// into a write by calling the ordinary API with the room's slug.
+//
+// This is a real restriction, not a security boundary: Attic has no accounts,
+// so anyone who can reach the server and guess a room name can still write to
+// it. The token stops a shared link from being an editing link; it does not
+// turn an unauthenticated server into an authenticated one.
+function newToken() {
+  let t = '';
+  for (let i = 0; i < 3; i++) t += Math.random().toString(36).slice(2, 10);
+  return t.slice(0, 22);
+}
+
+function shareToken(slug) {
+  const row = q.getMeta.get(slug);
+  if (row && row.view_token) return row.view_token;
+  const token = newToken();
+  q.setToken.run(slug, nextSeq(), token);
+  return token;
+}
 
 const DEFAULT_COLUMNS = ['To do', 'Doing', 'Done'];
 
@@ -203,7 +264,7 @@ const DEFAULT_WALL = 'main';
 const RESERVED = new Set([
   'api', 'w', 'legacy', 'landing', 'wall', 'public', 'assets', 'static',
   'index', 'favicon', 'icon', 'health', 'admin', 'login', 'signup', 'about',
-  'connect', 'qr', 'support', 'help',
+  'connect', 'qr', 'support', 'help', 'v', 'view', 'share',
 ]);
 
 function cleanWall(v) {
@@ -515,10 +576,57 @@ const server = http.createServer((req, res) => {
       // means a client that joins mid-session never renders the wrong layout.
       meta: wallMeta(wallId),
       notes: rows.map(rowToNote),
+      links: (since < 0 ? q.linksLive.all(wallId) : q.linksSince.all(wallId, since))
+        .map((l) => ({ id: l.id, a: l.a, b: l.b, deleted: !!l.deleted })),
       peers: livePeers(me, wallId),
       wall: { w: WALL_W, h: WALL_H },
       colors: COLORS,
       columnPresets: DEFAULT_COLUMNS,
+    });
+    return;
+  }
+
+  // Mint (or return) the read-only link for a room.
+  if (p === '/api/wall/share' && req.method === 'POST') {
+    readBody(req, (raw) => {
+      const input = parseBody(raw, req.headers['content-type']);
+      const wallId = cleanWall(input.wall);
+      const token = shareToken(wallId);
+      sendJSON(res, 200, { ok: true, token, url: '/v/' + token });
+    });
+    return;
+  }
+
+  // The read-only counterpart of /api/state. Deliberately returns no room slug
+  // and takes no presence heartbeat: a viewer is a spectator, not a peer.
+  if (p === '/api/view' && req.method === 'GET') {
+    const row = q.byToken.get(String(u.searchParams.get('token') || ''));
+    if (!row) {
+      sendJSON(res, 404, { ok: false, error: 'unknown or revoked share link' });
+      return;
+    }
+    const since = clampInt(u.searchParams.get('since'), -1, 2 ** 31, -1);
+    const slug = row.wall;
+    const meta = wallMeta(slug);
+
+    sendJSON(res, 200, {
+      seq: q.getSeq.get().v,
+      full: since < 0,
+      readOnly: true,
+      // Name and layout, but never the address. Every note carries its room in
+      // the ordinary API, so it has to come off here — otherwise the viewer
+      // learns the slug from the payload and the token protects nothing.
+      meta: { title: meta.title, layout: meta.layout, columns: meta.columns },
+      notes: (since < 0 ? q.live.all(slug) : q.since.all(slug, since)).map((r) => {
+        const n = rowToNote(r);
+        delete n.wall;
+        return n;
+      }),
+      links: (since < 0 ? q.linksLive.all(slug) : q.linksSince.all(slug, since))
+        .map((l) => ({ id: l.id, a: l.a, b: l.b, deleted: !!l.deleted })),
+      peers: [],
+      wall: { w: WALL_W, h: WALL_H },
+      colors: COLORS,
     });
     return;
   }
@@ -550,6 +658,7 @@ const server = http.createServer((req, res) => {
       const wallId = cleanWall(input.wall);
       const removed = q.countLive.get(wallId).n;
       q.dropNotes.run(wallId);
+      q.dropLinks.run(wallId);
       q.dropMeta.run(wallId);
       for (const [id, peer] of peers) if (peer.wall === wallId) peers.delete(id);
       sendJSON(res, 200, { ok: true, wall: wallId, removed, seq: nextSeq() });
@@ -640,8 +749,46 @@ const server = http.createServer((req, res) => {
     readBody(req, (raw) => {
       const input = parseBody(raw, req.headers['content-type']);
       const id = String(input.id || '');
+      const wallId = cleanWall(input.wall);
       const seq = nextSeq();
-      q.softDelete.run(seq, id, cleanWall(input.wall));
+      q.softDelete.run(seq, id, wallId);
+      q.linksForNote.run(nextSeq(), wallId, id, id);
+      sendJSON(res, 200, { ok: true, seq });
+    });
+    return;
+  }
+
+  if (p === '/api/link' && req.method === 'POST') {
+    readBody(req, (raw) => {
+      const input = parseBody(raw, req.headers['content-type']);
+      const wallId = cleanWall(input.wall);
+      const a = String(input.a || '').slice(0, 64);
+      const b = String(input.b || '').slice(0, 64);
+
+      if (!a || !b || a === b) {
+        sendJSON(res, 400, { ok: false, error: 'a link needs two different notes' });
+        return;
+      }
+      // Links have no direction, so A-B and B-A are the same link.
+      const dupe = q.linkExists.get(wallId, a, b, b, a);
+      if (dupe) {
+        sendJSON(res, 200, { ok: true, id: dupe.id, existing: true });
+        return;
+      }
+
+      const seq = nextSeq();
+      const id = 'l' + seq + '-' + Math.floor(Math.random() * 1e6);
+      q.linkInsert.run(id, wallId, a, b, seq);
+      sendJSON(res, 200, { ok: true, id, seq });
+    });
+    return;
+  }
+
+  if (p === '/api/link/delete' && req.method === 'POST') {
+    readBody(req, (raw) => {
+      const input = parseBody(raw, req.headers['content-type']);
+      const seq = nextSeq();
+      q.linkDelete.run(seq, String(input.id || ''), cleanWall(input.wall));
       sendJSON(res, 200, { ok: true, seq });
     });
     return;
@@ -773,6 +920,13 @@ const server = http.createServer((req, res) => {
   //
   // A room name may not contain a dot, which is what keeps this from shadowing
   // static files: every asset has an extension, no room does.
+  // Read-only share links. The client reads the token from the URL and polls
+  // /api/view with it.
+  if (/^\/v\/[a-z0-9]{6,32}\/?$/.test(p)) {
+    serveStatic(res, '/index.html');
+    return;
+  }
+
   const bare = p.match(/^\/([a-z0-9][a-z0-9-]{0,47})\/?$/);
   const aliased = p.match(/^\/w\/([a-z0-9][a-z0-9-]{0,47})\/?$/);
   if (aliased || (bare && bare[1].indexOf('.') === -1 && !RESERVED.has(bare[1]))) {

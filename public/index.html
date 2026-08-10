@@ -83,19 +83,31 @@
 </div>
 
 <div id="sharebox">
+  <div id="share-mode">
+    <button id="share-edit" type="button">anyone can edit</button>
+    <button id="share-view" type="button">view only</button>
+  </div>
   <div id="share-qr"></div>
   <div id="share-url"></div>
   <p id="share-hint">Point another device's camera at this, or type the address in.</p>
   <button id="share-close" type="button">close</button>
 </div>
 
-<div id="editor">
-  <textarea id="editor-text"></textarea>
-  <div id="editor-bar">
-    <button id="editor-save" type="button">save</button>
-    <button id="editor-del" type="button">delete</button>
-    <button id="editor-cancel" type="button">cancel</button>
-  </div>
+<!-- Chrome for a read-only share link: nothing to edit, so nothing but the
+     two controls that make a wall readable on someone else's screen. -->
+<div id="viewbar">
+  <span id="view-title"></span>
+  <button id="view-fit" type="button">fit</button>
+  <button id="view-mono" type="button">greyscale</button>
+</div>
+
+<!-- Actions for the note being edited. Positioned in screen coordinates beside
+     the note, so it stays a usable size no matter how far you have zoomed out. -->
+<div id="noteactions">
+  <button id="act-link" type="button" title="connect this note to another">link</button>
+  <button id="act-color" type="button" title="change colour">colour</button>
+  <button id="act-del" type="button" title="delete this note">delete</button>
+  <button id="act-done" type="button" title="finish editing">done</button>
 </div>
 
 <noscript>

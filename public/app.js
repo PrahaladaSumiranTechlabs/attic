@@ -27,8 +27,7 @@
   var swatchWrap = document.getElementById('swatches');
   var minimap = document.getElementById('minimap');
   var mmInner = document.getElementById('mm-inner');
-  var editor = document.getElementById('editor');
-  var editorText = document.getElementById('editor-text');
+  var inlineTA = null;
   var overviewBtn = document.getElementById('overview');
   var kioskBtn = document.getElementById('kiosk');
   var einkBtn = document.getElementById('eink');
@@ -68,9 +67,20 @@
   // The URL is the wall. /w/<slug> names one; bare / is the default wall, which
   // is what a self-hosted box on a home network actually wants.
   // Both /<room> and the longer /w/<room> alias resolve to the same wall.
+  // /v/<token> is a read-only share link: the viewer is never told which room
+  // it is looking at, so the link cannot be turned back into an editing one.
   var wallId = 'main';
-  var m = window.location.pathname.match(/^\/(?:w\/)?([a-z0-9][a-z0-9-]{0,47})\/?$/);
-  if (m) wallId = m[1];
+  var viewOnly = false;
+  var viewToken = '';
+
+  var vm = window.location.pathname.match(/^\/v\/([a-z0-9]{6,32})\/?$/);
+  if (vm) {
+    viewOnly = true;
+    viewToken = vm[1];
+  } else {
+    var m = window.location.pathname.match(/^\/(?:w\/)?([a-z0-9][a-z0-9-]{0,47})\/?$/);
+    if (m) wallId = m[1];
+  }
 
   // -------------------------------------------------------------- identity
 
@@ -353,6 +363,112 @@
     }, false);
   })();
 
+  // ----------------------------------------------------------------- links
+  // Connections between two notes, drawn as SVG lines behind them. A link has
+  // no direction — A-B and B-A are the same connection — and it belongs to
+  // neither note, which is why it lives in its own table rather than as a field.
+
+  var links = {};
+  var svg = null;
+  var linking = false;
+  var linkFrom = null;
+
+  function ensureSVG() {
+    if (svg) return svg;
+    svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('id', 'links');
+    // Behind every note, so lines never sit on top of text.
+    wall.insertBefore(svg, wall.firstChild);
+    return svg;
+  }
+
+  function centreOf(id) {
+    var el = els[id];
+    if (!el) return null;
+    return {
+      x: (parseInt(el.style.left, 10) || 0) + el.offsetWidth / 2,
+      y: (parseInt(el.style.top, 10) || 0) + el.offsetHeight / 2,
+    };
+  }
+
+  function drawLinks() {
+    var count = 0;
+    for (var k in links) if (links.hasOwnProperty(k)) count++;
+    if (!count) {
+      if (svg) svg.innerHTML = '';
+      return;
+    }
+
+    var s = ensureSVG();
+    s.setAttribute('width', wallW);
+    s.setAttribute('height', wallH);
+    s.setAttribute('viewBox', '0 0 ' + wallW + ' ' + wallH);
+
+    var parts = '';
+    for (var id in links) {
+      if (!links.hasOwnProperty(id)) continue;
+      var l = links[id];
+      var a = centreOf(l.a);
+      var b = centreOf(l.b);
+      if (!a || !b) continue; // an end is missing on this wall; skip quietly
+      parts += '<line x1="' + a.x + '" y1="' + a.y + '" x2="' + b.x + '" y2="' + b.y +
+        '" class="link" data-id="' + id + '"></line>';
+      // A fat transparent line on top, so the thin visible one is still easy
+      // to hit with a finger.
+      parts += '<line x1="' + a.x + '" y1="' + a.y + '" x2="' + b.x + '" y2="' + b.y +
+        '" class="link-hit" data-id="' + id + '"></line>';
+    }
+    s.innerHTML = parts;
+  }
+
+  function startLink() {
+    if (!editingId) return;
+    linkFrom = editingId;
+    commitEdit();
+    linking = true;
+    addClass(body, 'linking');
+    toast('Tap another note to connect it. Esc to stop.', 8000);
+  }
+
+  function stopLink() {
+    linking = false;
+    linkFrom = null;
+    removeClass(body, 'linking');
+  }
+
+  function finishLink(toId) {
+    var from = linkFrom;
+    stopLink();
+    if (!from || !toId || from === toId) return;
+
+    var tempId = 'tmp' + Date.now();
+    links[tempId] = { id: tempId, a: from, b: toId };
+    drawLinks();
+
+    xhr('POST', '/api/link', { wall: wallId, a: from, b: toId }, function (err, data) {
+      delete links[tempId];
+      if (!err && data && data.id) links[data.id] = { id: data.id, a: from, b: toId };
+      drawLinks();
+      if (!err) toast('Linked');
+    });
+  }
+
+  function deleteLink(id) {
+    delete links[id];
+    drawLinks();
+    xhr('POST', '/api/link/delete', { wall: wallId, id: id }, function () {});
+  }
+
+  // Clicking a connection offers to remove it; there is nothing else you can
+  // do to a line.
+  wall.addEventListener('click', function (e) {
+    var t = e.target;
+    if (!t || !t.getAttribute) return;
+    var id = t.getAttribute('data-id');
+    if (!id || !links[id] || viewOnly) return;
+    if (window.confirm('Remove this connection?')) deleteLink(id);
+  }, false);
+
   // ---------------------------------------------------------------- kanban
   // A real board, not notes arranged to look like one: a card belongs to a
   // column, the column decides where it sits, and dropping it somewhere else
@@ -458,6 +574,7 @@
     wall.style.width = wallW + 'px';
     wall.style.height = wallH + 'px';
     applyZoom();
+    drawLinks();
   }
 
   // Where would a card dropped at this point land?
@@ -547,6 +664,7 @@
   }
 
   function saveNote(n, cb, skipLayout) {
+    if (viewOnly) return;
     notes[n.id] = n;
     renderNote(n);
     n.wall = wallId;
@@ -558,11 +676,18 @@
   }
 
   function deleteNote(id) {
+    if (viewOnly) return;
     var el = els[id];
     if (el && el.parentNode) el.parentNode.removeChild(el);
     delete els[id];
     delete notes[id];
     refreshEmptyState();
+    // Drop this note's connections locally too; the server does the same.
+    for (var lid in links) {
+      if (!links.hasOwnProperty(lid)) continue;
+      if (links[lid].a === id || links[lid].b === id) delete links[lid];
+    }
+    drawLinks();
     xhr('POST', '/api/note/delete', { id: id, wall: wallId }, function () {});
   }
 
@@ -574,7 +699,7 @@
     var startX, startY, origX, origY, moved, downAt, lastX, lastY;
 
     function down(e) {
-      if (editingId || kioskOn) return;
+      if (viewOnly || editingId || kioskOn) return;
       var t = e.touches ? e.touches[0] : e;
       startX = lastX = t.clientX;
       startY = lastY = t.clientY;
@@ -621,6 +746,7 @@
         el.style.left = nx + 'px';
         el.style.top = ny + 'px';
       }
+      drawLinks();
       if (e.preventDefault) e.preventDefault();
     }
 
@@ -649,7 +775,7 @@
     var startX, startY, origW, origH;
 
     function down(e) {
-      if (editingId || kioskOn) return;
+      if (viewOnly || editingId || kioskOn) return;
       var t = e.touches ? e.touches[0] : e;
       startX = t.clientX;
       startY = t.clientY;
@@ -694,40 +820,124 @@
   }
 
   // --------------------------------------------------------------- editor
+  // You type in the note, not in a dialog about the note. The old modal made
+  // "+ note" save an empty note and then rely on the right button to clean it
+  // up — dismiss it any other way and a blank ghost note stayed on the wall.
+
+  var actions = document.getElementById('noteactions');
+
+  function positionActions(id) {
+    var el = els[id];
+    if (!el) return;
+    var r = el.getBoundingClientRect();
+    // Kept on screen even when the note is at the edge of the viewport.
+    var left = Math.min(Math.max(8, r.left), viewW() - actions.offsetWidth - 8);
+    var top = r.bottom + 8;
+    if (top > viewH() - 46) top = Math.max(56, r.top - 46);
+    actions.style.left = Math.round(left) + 'px';
+    actions.style.top = Math.round(top) + 'px';
+  }
 
   function openEditor(id) {
+    if (viewOnly) return;
+    if (linking) { finishLink(id); return; }
+    if (editingId && editingId !== id) commitEdit();
+
     editingId = id;
-    editorText.value = notes[id] ? notes[id].text : '';
-    editor.className = 'open';
+    var el = els[id];
+    if (!el) return;
+
+    if (!inlineTA) {
+      inlineTA = document.createElement('textarea');
+      inlineTA.className = 'note-edit';
+      // Commit on blur: clicking anywhere else is how you finish a note, the
+      // same way it works on a paper one.
+      inlineTA.onblur = function () { if (editingId) commitEdit(); };
+      inlineTA.onkeydown = function (e) {
+        var code = e.keyCode || e.which;
+        if (code === 27) { cancelEdit(); return false; }
+        // Ctrl/Cmd+Enter finishes, plain Enter is a new line.
+        if (code === 13 && (e.ctrlKey || e.metaKey)) { commitEdit(); return false; }
+        if (e.stopPropagation) e.stopPropagation();
+        return true;
+      };
+      wall.appendChild(inlineTA);
+    }
+
+    addClass(el, 'editing');
+    inlineTA.value = notes[id].text;
+    inlineTA.style.left = el.style.left;
+    inlineTA.style.top = el.style.top;
+    inlineTA.style.width = el.offsetWidth + 'px';
+    inlineTA.style.height = el.offsetHeight + 'px';
+    inlineTA.className = 'note-edit open c-' + notes[id].color;
+
+    actions.className = 'open';
+    positionActions(id);
+
     // Old iOS will not focus a textarea outside a user gesture; this sits
     // inside the touchend handler chain, so it works.
-    try { editorText.focus(); } catch (e) {}
+    try {
+      inlineTA.focus();
+      var len = inlineTA.value.length;
+      if (inlineTA.setSelectionRange) inlineTA.setSelectionRange(len, len);
+    } catch (e) {}
   }
 
-  function closeEditor() {
+  function hideEditor() {
+    if (editingId && els[editingId]) removeClass(els[editingId], 'editing');
     editingId = null;
-    editor.className = '';
+    if (inlineTA) inlineTA.className = 'note-edit';
+    actions.className = '';
   }
 
-  document.getElementById('editor-save').onclick = function () {
+  function commitEdit() {
     if (!editingId) return;
-    var n = notes[editingId];
-    n.text = editorText.value;
+    var id = editingId;
+    var n = notes[id];
+    var text = inlineTA ? inlineTA.value : '';
+    hideEditor();
+    if (!n) return;
+
+    // A note with nothing in it is not a note. This is what stops "+ note"
+    // from littering the wall every time somebody changes their mind.
+    if (!text.replace(/^\s+|\s+$/g, '')) { deleteNote(id); return; }
+    if (text === n.text) return;
+
+    n.text = text;
     n.author = myName;
     saveNote(n);
-    closeEditor();
-  };
+  }
 
-  document.getElementById('editor-cancel').onclick = function () {
-    // An untouched blank note is an abandoned note, not a real one.
-    if (editingId && notes[editingId] && !notes[editingId].text) deleteNote(editingId);
-    closeEditor();
-  };
-
-  document.getElementById('editor-del').onclick = function () {
+  function cancelEdit() {
     if (!editingId) return;
-    if (window.confirm('Delete this note?')) deleteNote(editingId);
-    closeEditor();
+    var id = editingId;
+    var n = notes[id];
+    hideEditor();
+    // Escape on a note that was never given any text removes it, rather than
+    // leaving the blank note the old modal used to leave behind.
+    if (n && !n.text.replace(/^\s+|\s+$/g, '')) deleteNote(id);
+  }
+
+  document.getElementById('act-done').onclick = function () { commitEdit(); };
+  document.getElementById('act-link').onclick = function () { startLink(); };
+
+  document.getElementById('act-del').onclick = function () {
+    if (!editingId) return;
+    var id = editingId;
+    hideEditor();
+    deleteNote(id);
+  };
+
+  document.getElementById('act-color').onclick = function () {
+    if (!editingId) return;
+    var n = notes[editingId];
+    var i = colors.indexOf(n.color);
+    n.color = colors[(i + 1) % colors.length];
+    if (inlineTA) inlineTA.className = 'note-edit open c-' + n.color;
+    saveNote(n);
+    // saveNote re-rendered the element, so the editing marker has to go back on.
+    if (els[editingId]) addClass(els[editingId], 'editing');
   };
 
   // ------------------------------------------------------------ new notes
@@ -958,19 +1168,19 @@
   // useless to the tablet you are trying to set up.
   var sharebox = document.getElementById('sharebox');
 
-  document.getElementById('share').onclick = function () {
+  function showShare(path, hint) {
     var qrBox = document.getElementById('share-qr');
     var urlBox = document.getElementById('share-url');
-    sharebox.className = 'open';
     urlBox.innerHTML = 'finding this machine&rsquo;s address&hellip;';
     qrBox.innerHTML = '';
+    document.getElementById('share-hint').innerHTML = hint;
 
     xhr('GET', '/api/addresses', null, function (err, data) {
       var host = window.location.host;
       if (!err && data && data.addresses && data.addresses.length) {
         host = data.addresses[0].address + ':' + data.port;
       }
-      var url = 'http://' + host + wallPath();
+      var url = 'http://' + host + path;
       urlBox.innerHTML = escapeHTML(url);
       // Fetched as markup rather than an <img src>, so it inherits the page's
       // colours and stays crisp at any size.
@@ -981,7 +1191,37 @@
       };
       r.send(null);
     });
+  }
+
+  function shareEditable() {
+    addClass(document.getElementById('share-edit'), 'on');
+    removeClass(document.getElementById('share-view'), 'on');
+    showShare(wallPath(),
+      'Anyone who opens this can add and change notes.');
+  }
+
+  function shareReadOnly() {
+    removeClass(document.getElementById('share-edit'), 'on');
+    addClass(document.getElementById('share-view'), 'on');
+    document.getElementById('share-url').innerHTML = 'making a view link&hellip;';
+    document.getElementById('share-qr').innerHTML = '';
+    xhr('POST', '/api/wall/share', { wall: wallId }, function (err, data) {
+      if (err || !data || !data.url) {
+        document.getElementById('share-url').innerHTML = 'could not create a view link';
+        return;
+      }
+      showShare(data.url,
+        'Opens the wall read-only. Nothing on it can be changed from this link.');
+    });
+  }
+
+  document.getElementById('share').onclick = function () {
+    sharebox.className = 'open';
+    shareEditable();
   };
+
+  document.getElementById('share-edit').onclick = shareEditable;
+  document.getElementById('share-view').onclick = shareReadOnly;
 
   document.getElementById('share-close').onclick = function () { sharebox.className = ''; };
 
@@ -1052,7 +1292,8 @@
   document.onkeydown = function (e) {
     var code = e.keyCode || e.which;
     if (code !== 27) return;
-    if (editingId) { closeEditor(); return; }
+    if (linking) { stopLink(); toast('Linking cancelled'); return; }
+    if (editingId) { cancelEdit(); return; }
     if (sharebox && sharebox.className === 'open') { sharebox.className = ''; return; }
     if (roombox && roombox.className === 'open') { roombox.className = ''; return; }
     if (kioskOn) setKiosk(false);
@@ -1138,7 +1379,10 @@
   // heartbeat. On slow hardware every extra round trip is felt.
 
   function poll() {
-    var url = '/api/state?since=' + seq +
+    var url = viewOnly
+      ? '/api/view?token=' + encodeURIComponent(viewToken) + '&since=' + seq +
+        '&_=' + new Date().getTime()
+      : '/api/state?since=' + seq +
       '&wall=' + encodeURIComponent(wallId) +
       '&id=' + encodeURIComponent(myId) +
       '&name=' + encodeURIComponent(myName) +
@@ -1184,6 +1428,14 @@
           buildSwatches();
         }
 
+        if (data.links) {
+          for (var li = 0; li < data.links.length; li++) {
+            var lk = data.links[li];
+            if (lk.deleted) delete links[lk.id];
+            else links[lk.id] = lk;
+          }
+        }
+
         for (var i = 0; i < data.notes.length; i++) {
           var n = data.notes[i];
           // Never clobber the note currently open in the editor: local intent
@@ -1193,7 +1445,17 @@
         }
         seq = data.seq;
         if (isKanban() && data.notes.length) layoutKanban();
+        drawLinks();
         drawMinimap(data.peers);
+
+        // A share link should open already framed, not scrolled to a corner of
+        // an empty grid. Once, after the first payload has been laid out.
+        if (viewOnly && !didFirstFit && countNotes()) {
+          didFirstFit = true;
+          setHTML(document.getElementById('view-title'),
+                  escapeHTML(meta.title || 'Shared wall'), null);
+          window.setTimeout(fitToContent, 60);
+        }
       }
 
       // Back off when the server is unreachable so a sleeping tablet does not
@@ -1202,6 +1464,34 @@
       var delay = failures > 3 ? Math.min(30000, base * failures) : base;
       window.setTimeout(poll, delay);
     });
+  }
+
+  // ------------------------------------------------------------ view mode
+  // What a share link opens: the wall, fitted, and nothing to press by
+  // accident. Greyscale is here because a wall shared onto someone else's
+  // screen — or a projector, or a monochrome panel — reads better without six
+  // sticky-note colours competing.
+
+  var didFirstFit = false;
+
+  function setMono(on) {
+    if (on) addClass(body, 'mono'); else removeClass(body, 'mono');
+    var b = document.getElementById('view-mono');
+    if (on) addClass(b, 'on'); else removeClass(b, 'on');
+    store('attic.mono', on ? '1' : '');
+  }
+
+  if (viewOnly) {
+    addClass(body, 'viewonly');
+    document.getElementById('view-fit').onclick = function () { fitToContent(); };
+    document.getElementById('view-mono').onclick = function () {
+      setMono(!hasClass(body, 'mono'));
+    };
+    if (store('attic.mono')) setMono(true);
+
+    // Re-fit on rotation or resize: a shared wall is usually left open on a
+    // screen nobody is driving, and it should still frame itself.
+    window.onresize = function () { if (fitted) fitToContent(); };
   }
 
   // ----------------------------------------------------------------- boot

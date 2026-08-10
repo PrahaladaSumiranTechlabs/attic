@@ -61,6 +61,51 @@ Tap the room chip in the toolbar to open the room panel. From there you can:
 - **Delete a room.** This is a hard delete of its notes and its configuration,
   confirmed by name and note count rather than a bare "are you sure".
 
+## Writing a note
+
+You type **in** the note, not in a dialog about it. Tap a note and a textarea
+appears over it, matching its size and colour; a small action bar beside it
+offers link, colour, delete and done. Click anywhere else to finish — the same
+way you stop writing on a paper note. Escape cancels, Ctrl/Cmd+Enter finishes,
+plain Enter is a new line.
+
+A note with nothing in it is deleted rather than kept. The previous modal saved
+an empty note the moment you pressed **+ note** and relied on you pressing the
+right button to clean it up; dismissing it any other way left a blank ghost note
+on the wall.
+
+## Linking notes
+
+Tap a note, press **link**, then tap another. A line joins them, drawn behind
+the notes in SVG, and follows them as they move. Tap a line to remove it.
+
+A link has no direction — A–B and B–A are the same connection — and it belongs
+to neither note, which is why links are their own table rather than a field on a
+note. Deleting a note removes its connections: a line to nothing is worse than
+no line.
+
+This is deliberately not a diagramming tool. There are no shapes, no anchors, no
+routing — that is the part of draw.io that would force a real canvas and cost
+the old-device promise.
+
+## Sharing a wall read-only
+
+**share → view only** mints a link like `/v/rdc85z8ix2j2dmk8zg4l49`. Opening it
+shows the wall with nothing to press: no toolbar, no minimap, no resize grips,
+no editing. It fits the content on load, re-fits on resize, and offers exactly
+two controls — **fit** and **greyscale**, the latter for a wall shown on a
+projector or a monochrome panel.
+
+The viewer polls `/api/view?token=…`, which is addressed **by token and never by
+room name**, and the payload has the room slug stripped out of it — including
+the `wall` field that every note carries in the ordinary API. Without the slug a
+viewer cannot turn a view link into a write by calling the normal API.
+
+**This restricts, it does not secure.** Attic has no accounts, so anyone who can
+reach the server and guess a room name can still edit it. A share link stops
+being an editing link; it does not make an unauthenticated server safe to
+expose. See the security model below.
+
 ## Free wall or columns
 
 A room is one of two things, and can be switched at any time without losing
@@ -222,6 +267,10 @@ streaming is exactly what old hardware cannot do.
 | `POST` | `/api/wall` | `{wall, title?, layout?, columns?}` — rename, switch layout, set columns |
 | `POST` | `/api/wall/delete` | `{wall}` — hard-deletes the room's notes and config |
 | `POST` | `/api/wall/new` | mints an unused slug |
+| `POST` | `/api/wall/share` | mints (or returns) the room's read-only token |
+| `GET` | `/api/view?token=&since=` | read-only state, addressed by token, room slug stripped |
+| `POST` | `/api/link` | `{wall, a, b}` — connect two notes |
+| `POST` | `/api/link/delete` | `{wall, id}` |
 | `GET` | `/api/walls` | rooms with note counts, names and layouts |
 | `GET` | `/api/templates` | available templates |
 | `POST` | `/api/template` | `{name, wall, author}` — seeds notes |
