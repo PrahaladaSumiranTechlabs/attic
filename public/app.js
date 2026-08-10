@@ -9,10 +9,12 @@
   'use strict';
 
   var POLL_MS = 1500;
-  // E-paper panels refresh in 120-450ms and ghost badly. Polling at the normal
-  // rate would leave the screen in a permanent refresh loop, so e-ink mode
-  // trades latency for legibility.
-  var POLL_MS_EINK = 8000;
+  // E-paper panels refresh in 120-450ms and ghost badly, so e-ink mode polls
+  // less often. 8s was over-cautious: polling does not repaint anything — only
+  // a change does, and every live region is already guarded against redundant
+  // writes. What 8s actually bought was a wall that looked broken, because a
+  // note added elsewhere took most of ten seconds to appear.
+  var POLL_MS_EINK = 3000;
   var NOTE_W = 180;
   var NOTE_H = 180;
   var MIN_NOTE = 90;
@@ -349,25 +351,29 @@
     frameBox(b, viewOnly ? 3 : 1);
   }
 
-  // Tap a note in a read-only view to read it. A shared wall is usually across a
-  // room or on a small panel, where a note at fit-scale is legible only in
-  // theory — so a tap fills the screen with one, and a second tap goes back.
+  // Tap a note in a read-only view to move in on it.
+  //
+  // This frames the *area* around the note rather than the note by itself.
+  // Filling the screen with a single card loses every sense of where you are on
+  // the wall, and whatever the note sits next to is usually the reason it makes
+  // sense. So the region is sized to leave the note about half the width, with
+  // a floor so a small note still brings its neighbours along.
   function zoomToNote(id) {
     var el = els[id];
     if (!el) return;
     if (focusedNote === id) { fitToContent(); return; }
 
-    var pad = 26;
-    var b = {
-      x: (parseInt(el.style.left, 10) || 0) - pad,
-      y: (parseInt(el.style.top, 10) || 0) - pad,
-      w: el.offsetWidth + pad * 2,
-      h: el.offsetHeight + pad * 2
-    };
+    var w = el.offsetWidth;
+    var h = el.offsetHeight;
+    var cx = (parseInt(el.style.left, 10) || 0) + w / 2;
+    var cy = (parseInt(el.style.top, 10) || 0) + h / 2;
+
+    var regionW = Math.max(w * 2.1, 620);
+    var regionH = Math.max(h * 2.1, 420);
 
     fitted = false;
     focusedNote = id;
-    frameBox(b, 4);
+    frameBox({ x: cx - regionW / 2, y: cy - regionH / 2, w: regionW, h: regionH }, 2.5);
     addClass(el, 'focused');
   }
 

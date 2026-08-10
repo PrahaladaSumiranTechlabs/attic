@@ -102,9 +102,11 @@ http://192.168.0.189:8080/kitchen/view     one room, read-only
 http://192.168.0.189:8080/view             the default room, read-only
 ```
 
-**Tap a note to read it.** A shared wall is usually across a room or on a small
-panel, where a note at fit-scale is legible only in theory — so a tap fills the
-screen with that one note, and tapping it again (or the board, or Escape) goes
+**Tap a note to move in on it.** A shared wall is usually across a room or on a
+small panel, where a note at fit-scale is legible only in theory. A tap frames
+the *area* around that note rather than the note by itself — filling the screen
+with one card loses all sense of where you are, and what a note sits next to is
+usually the reason it makes sense. Tapping it again, the board, or Escape goes
 back to the whole wall. While a note is open the display stops re-framing
 itself, so it is not yanked away mid-sentence.
 
@@ -241,8 +243,11 @@ is about reducing blue light on backlit screens:
 - **Borders instead of fills.** Grey fills ghost across partial refreshes.
 - **Colour becomes border texture** — solid, dashed, dotted, double — because
   the panel is greyscale.
-- **Presence is hidden and polling slows to 8s.** A live-updating region on
-  e-paper is a refresh loop you can watch.
+- **Presence is hidden and polling slows to 3s.** A live-updating region on
+  e-paper is a refresh loop you can watch. Polling itself repaints nothing —
+  only a change does — so the interval only needs to be gentle, not glacial;
+  at 8s a note added elsewhere took most of ten seconds to appear and the wall
+  looked broken.
 
 ## Design rules
 
