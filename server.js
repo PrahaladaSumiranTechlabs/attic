@@ -786,7 +786,17 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, HOST, () => {
   console.log('Attic listening on http://' + HOST + ':' + PORT);
   console.log('  wall      ->  /');
+  console.log('  room      ->  /<room-name>');
+  console.log('  connect   ->  /connect   (QR codes for other devices)');
   console.log('  display   ->  /?kiosk=1  (wall-mounted tablet mode)');
   console.log('  basic     ->  /legacy    (no JS, for very old browsers)');
   console.log('  database  ->  ' + DB_PATH);
+
+  // Said out loud on every start, because "no auth" is easy to forget once it
+  // has been working quietly on a trusted network for a month.
+  if (HOST === '0.0.0.0' || HOST === '::') {
+    console.log('');
+    console.log('  Note: no authentication. Anyone who can reach this port can');
+    console.log('  read and edit every room. Keep it on your LAN or behind a VPN.');
+  }
 });

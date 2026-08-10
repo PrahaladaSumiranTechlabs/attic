@@ -265,11 +265,34 @@ git tag v0.1.0 && git push origin v0.1.0
 Each OS builds its own artifacts, because electron-builder cannot produce a
 signed macOS `.dmg` from Linux.
 
+## Security model
+
+**There is no authentication, and that is deliberate.** Attic is an on-premise
+tool: the security boundary is your network, not a login screen. Anyone who can
+reach the server can read and edit every room on it.
+
+That trade buys the thing the product is actually for. A wall-mounted tablet
+comes up showing the wall — no login gate, no session that expires overnight, no
+password to type on a 2012 on-screen keyboard. Adding auth would cost exactly
+the property that makes the old-device story work.
+
+So the rule is simple:
+
+- **Fine:** a home or office LAN, a lab, a classroom, behind Tailscale or a VPN.
+- **Not fine:** port-forwarded to the internet, or on a public cloud box with an
+  open port. Do not do this. There is nothing stopping a stranger.
+
+If you need it reachable from outside, put it behind a VPN (Tailscale is the
+least effort — real certificate, no port forwarding, no auth for us to build).
+
+Hosted, multi-tenant Attic with real accounts is a separate thing, and it is
+available on request rather than as a product you sign up for — write to
+**hello@pstechlabs.com**.
+
 ## Not built yet
 
-- **Auth.** There is none. Anyone who can reach the server can edit any wall.
-  Fine on a LAN or behind Tailscale; **not** fine on the public internet.
-- **Accounts and private walls.** Needed before hosting this for other people.
+- **Accounts and private rooms.** Needed before hosting this for other people;
+  see the security model above.
 - **Images and attachments.** Text notes only.
 - **Undo.**
 
