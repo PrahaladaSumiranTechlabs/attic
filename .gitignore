@@ -10,3 +10,6 @@ electron.log
 Thumbs.db
 .env
 attic-trash/
+
+# Drafts for posts — kept locally, not published in the repo
+marketing/

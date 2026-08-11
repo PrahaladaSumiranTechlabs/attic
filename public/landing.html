@@ -11,6 +11,8 @@
 <meta property="og:title" content="Attic — the idea wall for the tablet in your drawer">
 <meta property="og:description" content="Every whiteboard tool needs a GPU. Attic doesn't. Self-hosted, open source, and it runs on hardware from 2012.">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="keywords" content="self-hosted whiteboard, sticky notes, old tablet, e-ink, kanban, open source, Miro alternative, e-waste">
+<meta name="theme-color" content="#f4f1ea">
 <style>
   /* This page may assume a modern browser — nobody evaluates a product on a
      2011 tablet. The app itself is the part with the compatibility promise, and
@@ -159,7 +161,7 @@
     </p>
     <div class="cta">
       <a class="btn" href="https://github.com/PrahaladaSumiranTechlabs/attic/releases">Download for desktop</a>
-      <a class="btn ghost" href="https://github.com/PrahaladaSumiranTechlabs/attic">Read the source</a>
+      <a class="btn ghost" href="https://github.com/PrahaladaSumiranTechlabs/attic#running-it">How it works</a>
     </div>
     <p class="nocard">Windows, macOS, Linux. Your notes never leave your network.</p>
   </div>
@@ -215,7 +217,8 @@
       <div class="card"><h3>Free wall</h3><p>Notes anywhere. Drag, resize, connect them with lines. Pan and zoom the board.</p></div>
       <div class="card"><h3>Columns</h3><p>A real kanban: a card belongs to a column, and dropping it elsewhere moves it. To do / Doing / Done, retro, or a column per weekday.</p></div>
       <div class="card"><h3>Display mode</h3><p>For a wall-mounted tablet: chrome hidden, dragging off so nobody rearranges the board by brushing past it.</p></div>
-      <div class="card"><h3>Read-only links</h3><p>Add <code>/view</code> to any room to share it with nothing to press — auto-fitted, with a greyscale switch for projectors.</p></div>
+      <div class="card"><h3>Read-only links</h3><p>Add <code>/view</code> to any room to share it with nothing to press — auto-fitted, with a greyscale switch for projectors. Tap a note to move in and read it.</p></div>
+      <div class="card"><h3>Undo, and a safety net</h3><p>Deleted notes can be undone. Deleting a room writes it out to JSON first, so nothing on a shared wall is one mistaken tap from gone.</p></div>
     </div>
   </div>
 </section>
@@ -312,7 +315,10 @@
       the security boundary is your network. That is what lets a wall-mounted tablet
       come up showing the wall instead of a sign-in form. Keep it on your LAN or
       behind a VPN; do not port-forward it to the open internet. Multi-tenant hosting
-      with real accounts is the emailed option above.
+      with real accounts is the emailed option above.<br><br>
+      <b>No accounts does not mean no safety net.</b> Deleting a note offers an undo,
+      and deleting a room writes the whole room to a JSON file beside the database
+      first — readable and restorable without this app's help.
     </div>
 
     <p class="sub" style="margin-top:26px">
