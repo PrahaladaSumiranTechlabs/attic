@@ -89,6 +89,34 @@ an empty note the moment you pressed **+ note** and relied on you pressing the
 right button to clean it up; dismissing it any other way left a blank ghost note
 on the wall.
 
+## Widgets
+
+A wall-mounted tablet wants more than notes on it, so **+ widget** drops a clock,
+a date, a countdown, or a QR of the room's own address.
+
+**A widget is a note with a `kind`.** A clock is a note that draws a clock. That
+is not a shortcut — it means widgets inherit placement, dragging, resizing, sync,
+tombstones and undo, e-ink, greyscale, read-only sharing and tap-to-read from the
+code that already does all of it, instead of a parallel system with its own bugs.
+An unrecognised kind falls back to a plain note, so a future version's widget
+never renders as an invisible object here.
+
+Everything renders **from the browser alone**. Nothing fetches, nothing needs a
+key, nothing leaves the network — which is what keeps the security model above
+true. A weather tile would need outbound network and an API key; a system-stats
+tile would need an agent on the host. Both are a different product wearing this
+one's clothes. If you want one, the honest shape is a widget that renders a URL
+*you* supply, so the egress is your choice rather than a default.
+
+The clock shows **no seconds**, deliberately. A per-second repaint is invisible
+waste on an LCD and ruinous on e-paper, and nobody reads a wall clock to the
+second. One timer serves every widget and writes only when the displayed value
+changes — measured at **zero DOM rewrites over six seconds** with three widgets
+on the wall.
+
+A countdown's first line is its target (`2026-12-25`, optionally with `09:00`);
+everything after it is the label.
+
 ## Linking notes
 
 Tap a note, press **link**, then tap another. A line joins them, drawn behind

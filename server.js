@@ -44,6 +44,13 @@ const WALL_H = 3000;
 
 const COLORS = ['yellow', 'pink', 'blue', 'green', 'orange', 'purple'];
 
+// Every widget here renders from the browser alone. Nothing fetches, nothing
+// needs a key, nothing leaves the network — which is what lets the security
+// model on the landing page stay true. A weather tile would need outbound
+// network and an API key, and a system-stats tile would need an agent on the
+// host; both are a different product wearing this one's clothes.
+const KINDS = ['note', 'clock', 'date', 'countdown', 'qr'];
+
 // Templates are just pre-placed notes. No special "column" or "lane" type: a
 // kanban header is a wide short note, and the columns are a convention the eye
 // enforces, not the schema. That keeps one data model for every layout, and it
@@ -156,6 +163,13 @@ if (cols.indexOf('col') === -1) {
   db.exec(`ALTER TABLE notes ADD COLUMN ord INTEGER NOT NULL DEFAULT 0`);
   console.log('migrated: notes gained column placement');
 }
+// Widgets are notes with a kind, rather than a second kind of object with its
+// own table, sync path and bugs. A clock is a note that draws a clock. It
+// inherits placement, dragging, undo, e-ink and read-only sharing for free.
+if (cols.indexOf('kind') === -1) {
+  db.exec(`ALTER TABLE notes ADD COLUMN kind TEXT NOT NULL DEFAULT 'note'`);
+  console.log('migrated: notes gained a kind');
+}
 
 const wallCols = db.prepare(`PRAGMA table_info(walls)`).all().map((c) => c.name);
 if (wallCols.length && wallCols.indexOf('view_token') === -1) {
@@ -180,12 +194,12 @@ const q = {
     FROM notes WHERE deleted = 0 GROUP BY wall ORDER BY seq DESC
   `),
   upsert: db.prepare(`
-    INSERT INTO notes (id, wall, x, y, w, h, text, color, author, col, ord, seq, deleted)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+    INSERT INTO notes (id, wall, x, y, w, h, text, color, author, col, ord, kind, seq, deleted)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     ON CONFLICT(id) DO UPDATE SET
       x = excluded.x, y = excluded.y, w = excluded.w, h = excluded.h,
       text = excluded.text, color = excluded.color, author = excluded.author,
-      col = excluded.col, ord = excluded.ord,
+      col = excluded.col, ord = excluded.ord, kind = excluded.kind,
       seq = excluded.seq, deleted = 0
   `),
   softDelete: db.prepare(`UPDATE notes SET deleted = 1, seq = ? WHERE id = ? AND wall = ?`),
@@ -599,6 +613,7 @@ function normalizeNote(input, seq, wall) {
     w: clampInt(input.w, 80, 600, 180),
     h: clampInt(input.h, 80, 600, 180),
     text: String(input.text == null ? '' : input.text).slice(0, 4000),
+    kind: KINDS.indexOf(input.kind) === -1 ? 'note' : input.kind,
     color: COLORS.indexOf(input.color) === -1 ? 'yellow' : input.color,
     author: String(input.author || '').slice(0, 40),
     col: String(input.col == null ? '' : input.col).slice(0, 40),
@@ -610,7 +625,8 @@ function normalizeNote(input, seq, wall) {
 // One place to write a note, so the column arguments cannot drift out of sync
 // between the four callers that create them.
 function writeNote(n) {
-  q.upsert.run(n.id, n.wall, n.x, n.y, n.w, n.h, n.text, n.color, n.author, n.col, n.ord, n.seq);
+  q.upsert.run(n.id, n.wall, n.x, n.y, n.w, n.h, n.text, n.color, n.author,
+               n.col, n.ord, n.kind || 'note', n.seq);
 }
 
 function rowToNote(r) {
@@ -626,6 +642,7 @@ function rowToNote(r) {
     author: r.author,
     col: r.col || '',
     ord: r.ord || 0,
+    kind: r.kind || 'note',
     seq: r.seq,
     deleted: !!r.deleted,
   };
@@ -783,6 +800,7 @@ const server = http.createServer((req, res) => {
       peers: livePeers(me, wallId),
       wall: { w: WALL_W, h: WALL_H },
       colors: COLORS,
+      kinds: KINDS,
       columnPresets: DEFAULT_COLUMNS,
     });
     return;

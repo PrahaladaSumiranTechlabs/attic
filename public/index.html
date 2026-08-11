@@ -51,6 +51,7 @@
   <span id="swatches"></span>
 
   <span class="bar-sep"></span>
+  <button id="addwidget" type="button" title="add a clock, date, countdown or QR">+ widget</button>
   <button id="newwall" type="button">new wall</button>
   <button id="share" type="button" title="show a QR to open this wall on another device">share</button>
 
@@ -129,6 +130,14 @@
   <button id="view-fit" type="button">fit</button>
   <button id="view-mono" type="button">greyscale</button>
   <button id="view-eink" type="button" title="for e-paper screens: max contrast, no fills, slow refresh">e-ink</button>
+</div>
+
+<!-- Which widget to drop. Opened from the toolbar, closes on any other press. -->
+<div id="widgetmenu">
+  <button type="button" data-kind="clock">Clock</button>
+  <button type="button" data-kind="date">Date</button>
+  <button type="button" data-kind="countdown">Countdown</button>
+  <button type="button" data-kind="qr">Room QR</button>
 </div>
 
 <!-- Actions for the note being edited. Positioned in screen coordinates beside

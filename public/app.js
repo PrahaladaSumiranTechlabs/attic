@@ -692,6 +692,133 @@
     layoutKanban();
   }
 
+  // --------------------------------------------------------------- widgets
+  // A widget is a note with a kind, so it is placed, dragged, resized, synced,
+  // undone, greyscaled and shared by the code that already does all of that.
+  // Everything here renders from the browser alone — no fetch, no key, nothing
+  // leaving the network, which is what keeps the security story true.
+
+  function two(n) { return (n < 10 ? '0' : '') + n; }
+
+  var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
+                'July', 'August', 'September', 'October', 'November', 'December'];
+
+  // The label is whatever is left after any configuration on the first line.
+  function widgetLabel(n) {
+    var t = n.text || '';
+    if (n.kind === 'countdown') {
+      var nl = t.indexOf('\n');
+      return nl === -1 ? '' : t.slice(nl + 1);
+    }
+    return t;
+  }
+
+  function parseTarget(text) {
+    // First line is the target: YYYY-MM-DD, optionally with HH:MM.
+    var m = String(text || '').match(/(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+    if (!m) return null;
+    return new Date(+m[1], +m[2] - 1, +m[3], m[4] ? +m[4] : 0, m[5] ? +m[5] : 0, 0);
+  }
+
+  function widgetHTML(n) {
+    var label = escapeHTML(widgetLabel(n));
+    var now = new Date();
+
+    if (n.kind === 'clock') {
+      // Never seconds. A per-second repaint is invisible waste on an LCD and
+      // ruinous on e-paper, and nobody reads a wall clock to the second.
+      return '<div class="w-clock"><b>' + two(now.getHours()) + ':' + two(now.getMinutes()) + '</b>' +
+        (label ? '<span>' + label + '</span>' : '') + '</div>';
+    }
+
+    if (n.kind === 'date') {
+      return '<div class="w-date"><b>' + now.getDate() + '</b>' +
+        '<span>' + DAYS[now.getDay()] + '</span>' +
+        '<em>' + MONTHS[now.getMonth()] + ' ' + now.getFullYear() + '</em>' +
+        (label ? '<span class="w-label">' + label + '</span>' : '') + '</div>';
+    }
+
+    if (n.kind === 'countdown') {
+      var target = parseTarget(n.text);
+      if (!target) {
+        return '<div class="w-countdown"><b>—</b><span>First line: 2026-12-25</span></div>';
+      }
+      var ms = target.getTime() - now.getTime();
+      var past = ms < 0;
+      if (past) ms = -ms;
+      var days = Math.floor(ms / 86400000);
+      var hours = Math.floor((ms % 86400000) / 3600000);
+      var mins = Math.floor((ms % 3600000) / 60000);
+      var big = days > 0 ? days : hours > 0 ? hours : mins;
+      var unit = days > 0 ? (days === 1 ? 'day' : 'days')
+               : hours > 0 ? (hours === 1 ? 'hour' : 'hours')
+               : (mins === 1 ? 'minute' : 'minutes');
+      return '<div class="w-countdown"><b>' + big + '</b><span>' + unit +
+        (past ? ' ago' : ' to go') + '</span>' +
+        (label ? '<span class="w-label">' + label + '</span>' : '') + '</div>';
+    }
+
+    if (n.kind === 'qr') {
+      // Filled in asynchronously; the server draws it with the same encoder the
+      // connect page uses.
+      return '<div class="w-qr" data-qr="' + escapeHTML(n.id) + '">' +
+        (label ? '<span class="w-label">' + label + '</span>' : '') + '</div>';
+    }
+
+    return '';
+  }
+
+  // QR needs the machine's LAN address, which only the server knows.
+  var qrMarkup = null;
+  function fillQRWidgets() {
+    var boxes = document.querySelectorAll('.w-qr');
+    if (!boxes.length) return;
+    if (qrMarkup) {
+      for (var i = 0; i < boxes.length; i++) {
+        if (!boxes[i].getAttribute('data-done')) {
+          boxes[i].innerHTML = qrMarkup + boxes[i].innerHTML;
+          boxes[i].setAttribute('data-done', '1');
+        }
+      }
+      return;
+    }
+    xhr('GET', '/api/addresses', null, function (err, data) {
+      var host = window.location.host;
+      if (!err && data && data.addresses && data.addresses.length) {
+        host = data.addresses[0].address + ':' + data.port;
+      }
+      var url = 'http://' + host + (wallId === 'main' ? '/' : '/' + wallId);
+      var r = new XMLHttpRequest();
+      r.open('GET', '/api/qr.svg?text=' + encodeURIComponent(url), true);
+      r.onreadystatechange = function () {
+        if (r.readyState === 4 && r.status === 200) {
+          qrMarkup = r.responseText;
+          fillQRWidgets();
+        }
+      };
+      r.send(null);
+    });
+  }
+
+  // One timer for every widget on the wall. It writes only when the rendered
+  // text actually changes, so a clock repaints once a minute and a countdown
+  // once a minute — not once a second, which e-paper could not survive.
+  var widgetLast = {};
+  function tickWidgets() {
+    for (var id in notes) {
+      if (!notes.hasOwnProperty(id)) continue;
+      var n = notes[id];
+      if (!n.kind || n.kind === 'note' || n.kind === 'qr') continue;
+      var el = els[id];
+      if (!el) continue;
+      var html = widgetHTML(n);
+      if (widgetLast[id] === html) continue;
+      widgetLast[id] = html;
+      el.firstChild.innerHTML = html;
+    }
+  }
+
   // ----------------------------------------------------------- note render
 
   function renderNote(n) {
@@ -721,7 +848,8 @@
       attachResize(grip, el, n.id);
     }
     notes[n.id] = n;
-    el.className = 'note c-' + n.color;
+    el.className = 'note c-' + n.color +
+      (n.kind && n.kind !== 'note' ? ' widget w-' + n.kind : '');
     // In kanban the column owns the geometry, so only the freeform wall reads
     // x/y/w/h off the note itself.
     if (!isKanban()) {
@@ -730,8 +858,17 @@
       el.style.width = n.w + 'px';
       el.style.height = n.h + 'px';
     }
-    el.firstChild.innerHTML = escapeHTML(n.text) +
-      (n.author ? '<span class="author">' + escapeHTML(n.author) + '</span>' : '');
+    if (n.kind && n.kind !== 'note') {
+      addClass(el, 'widget');
+      addClass(el, 'w-' + n.kind);
+      var html = widgetHTML(n);
+      widgetLast[n.id] = html;
+      el.firstChild.innerHTML = html;
+      if (n.kind === 'qr') window.setTimeout(fillQRWidgets, 0);
+    } else {
+      el.firstChild.innerHTML = escapeHTML(n.text) +
+        (n.author ? '<span class="author">' + escapeHTML(n.author) + '</span>' : '');
+    }
     refreshEmptyState();
   }
 
@@ -1202,6 +1339,63 @@
       })(colors[i]);
     }
   }
+
+  // ------------------------------------------------------------ add a widget
+
+  var WIDGET_DEFAULTS = {
+    clock:     { w: 260, h: 150, color: 'blue',   text: '' },
+    date:      { w: 220, h: 200, color: 'green',  text: '' },
+    // The first line is the target; everything after it is the label.
+    countdown: { w: 240, h: 190, color: 'orange', text: '2026-12-25\nChristmas' },
+    qr:        { w: 200, h: 230, color: 'yellow', text: 'Scan to open this wall' },
+  };
+
+  var widgetMenu = document.getElementById('widgetmenu');
+
+  function addWidget(kind) {
+    var d = WIDGET_DEFAULTS[kind];
+    if (!d) return;
+    var n = {
+      id: 'n' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36),
+      x: Math.round(Math.max(0, Math.min(wallW - d.w, toWallX(viewW() / 2) - d.w / 2))),
+      y: Math.round(Math.max(0, Math.min(wallH - d.h, toWallY(viewH() / 2) - d.h / 2))),
+      w: d.w, h: d.h, kind: kind, color: d.color, text: d.text, author: myName
+    };
+    saveNote(n);
+    tickWidgets();
+    // A countdown is useless until you set its date, so open it straight away.
+    if (kind === 'countdown') openEditor(n.id);
+  }
+
+  document.getElementById('addwidget').onclick = function (e) {
+    if (widgetMenu.className === 'open') { widgetMenu.className = ''; return; }
+    var r = this.getBoundingClientRect();
+    widgetMenu.style.left = Math.round(r.left) + 'px';
+    widgetMenu.style.top = Math.round(r.bottom + 6) + 'px';
+    widgetMenu.className = 'open';
+    if (e && e.stopPropagation) e.stopPropagation();
+  };
+
+  (function () {
+    var buttons = widgetMenu.getElementsByTagName('button');
+    for (var i = 0; i < buttons.length; i++) {
+      (function (b) {
+        b.onclick = function () {
+          widgetMenu.className = '';
+          addWidget(b.getAttribute('data-kind'));
+        };
+      })(buttons[i]);
+    }
+    document.addEventListener('mousedown', function (e) {
+      if (widgetMenu.className !== 'open') return;
+      var node = e.target;
+      while (node) {
+        if (node === widgetMenu || node.id === 'addwidget') return;
+        node = node.parentNode;
+      }
+      widgetMenu.className = '';
+    }, true);
+  })();
 
   // ------------------------------------------------------------------ walls
 
@@ -1772,6 +1966,7 @@
         }
         seq = data.seq;
         if (isKanban() && data.notes.length) layoutKanban();
+        if (data.notes.length) { tickWidgets(); fillQRWidgets(); }
         drawLinks();
         drawMinimap(data.peers);
 
@@ -1846,6 +2041,10 @@
   buildSwatches();
   refreshEmptyState();
   loadTemplates();
+
+  // One timer for every widget. It only writes when the rendered text changes,
+  // so this costs nothing on a wall with no widgets on it.
+  window.setInterval(tickWidgets, 1000);
 
   if (/[?&]eink=1/.test(window.location.search) || store('attic.eink')) setEink(true);
   if (/[?&]kiosk=1/.test(window.location.search) || store('attic.kiosk')) setKiosk(true);

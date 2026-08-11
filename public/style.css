@@ -113,6 +113,130 @@ body.kiosk #canvas { cursor: default; }
 .c-orange { background: #ffd4a8; }
 .c-purple { background: #dcc9f5; }
 
+/* -------------------------------------------------------------- widgets */
+/* A widget is a note that draws something other than its text. It keeps the
+   note's shape, shadow and colour, so a clock sits on the wall as an object of
+   the same family rather than a panel bolted on. */
+
+.note.widget .note-body {
+  display: block;
+  padding: 10px 12px;
+  text-align: center;
+  overflow: hidden;
+}
+
+.w-clock, .w-date, .w-countdown, .w-qr {
+  height: 100%;
+  box-sizing: border-box;
+}
+
+/* Sized in em against a font-size the note itself sets, so a widget stays
+   legible when the whole wall is scaled down to fit. */
+.w-clock b {
+  display: block;
+  font-size: 54px;
+  line-height: 1.05;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #23211c;
+}
+
+.w-clock span, .w-date .w-label, .w-countdown .w-label, .w-qr .w-label {
+  display: block;
+  margin-top: 6px;
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.55);
+}
+
+.w-date b {
+  display: block;
+  font-size: 52px;
+  line-height: 1;
+  font-weight: 700;
+  color: #23211c;
+}
+
+.w-date span {
+  display: block;
+  margin-top: 2px;
+  font-size: 16px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.7);
+}
+
+.w-date em {
+  display: block;
+  font-style: normal;
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.5);
+}
+
+.w-countdown b {
+  display: block;
+  font-size: 50px;
+  line-height: 1.05;
+  font-weight: 700;
+  color: #23211c;
+}
+
+.w-countdown span {
+  display: block;
+  font-size: 14px;
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.w-qr svg {
+  width: 100%;
+  height: auto;
+  max-height: 78%;
+  display: block;
+  margin: 0 auto;
+}
+
+/* On e-paper the fill goes, the border carries the colour, and the numerals
+   are the only thing with weight — which is exactly what an e-ink panel is
+   good at. */
+body.eink .note.widget { background: #fff !important; }
+body.eink .w-clock b, body.eink .w-date b, body.eink .w-countdown b { color: #000; }
+body.eink .w-clock span, body.eink .w-date span, body.eink .w-date em,
+body.eink .w-countdown span, body.eink .w-label { color: #000; }
+
+/* The menu of widgets to drop. */
+#widgetmenu {
+  display: none;
+  position: fixed;
+  z-index: 1400;
+  padding: 6px;
+  background: #fffdf8;
+  border: 1px solid #ddd6c2;
+  border-radius: 7px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+}
+
+#widgetmenu.open { display: block; }
+
+#widgetmenu button {
+  display: block;
+  width: 100%;
+  min-width: 140px;
+  min-height: 34px;
+  padding: 7px 12px;
+  margin: 0 0 3px;
+  text-align: left;
+  font-size: 14px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #4a463d;
+  cursor: pointer;
+}
+
+#widgetmenu button:last-child { margin-bottom: 0; }
+#widgetmenu button:hover { background: #f4efe0; }
+
+body.eink #widgetmenu { background: #fff; border: 2px solid #000; border-radius: 0; box-shadow: none; }
+body.eink #widgetmenu button { color: #000; border-radius: 0; }
+
 /* -------------------------------------------------------------- toolbar */
 
 #bar {

@@ -186,6 +186,36 @@ async function waitForServer(tries = 60) {
     const sig = (r) => r.body.notes.map((n) => n.id + ':' + n.col + ':' + n.ord).sort().join('|');
     check('setting a title leaves the arrangement alone', sig(beforeRename) === sig(afterRename));
 
+    console.log('widgets are notes with a kind');
+    const clock = await post('/api/note',
+      { id: 'wclock', wall: 'widget-wall', x: 40, y: 40, w: 260, h: 150, kind: 'clock' });
+    check('a widget stores its kind', clock.body.note.kind === 'clock');
+
+    // Anything not on the list falls back to a plain note rather than rendering
+    // as nothing — an unknown kind must not produce an invisible object.
+    const bogus = await post('/api/note',
+      { id: 'wbogus', wall: 'widget-wall', x: 10, y: 10, kind: 'weather-api' });
+    check('an unrecognised kind falls back to a note', bogus.body.note.kind === 'note');
+
+    const plain = await post('/api/note',
+      { id: 'wplain', wall: 'widget-wall', x: 300, y: 40, text: 'ordinary' });
+    check('notes without a kind stay notes', plain.body.note.kind === 'note');
+
+    const widgetWall = await get('/api/state?since=-1&wall=widget-wall&id=smoke');
+    check('kind survives a round trip',
+      widgetWall.body.notes.find((n) => n.id === 'wclock').kind === 'clock');
+    check('the client is told which kinds exist',
+      Array.isArray(widgetWall.body.kinds) && widgetWall.body.kinds.indexOf('countdown') !== -1);
+
+    // Widgets must inherit everything notes get, since that is the whole reason
+    // they are notes.
+    await post('/api/note/delete', { id: 'wclock', wall: 'widget-wall' });
+    const undoW = await post('/api/note/restore', { id: 'wclock', wall: 'widget-wall' });
+    check('a widget can be deleted and undone like any note', undoW.body.ok === true);
+    const backW = await get('/api/state?since=-1&wall=widget-wall&id=smoke');
+    check('and comes back still a clock',
+      backW.body.notes.find((n) => n.id === 'wclock' && !n.deleted).kind === 'clock');
+
     console.log('nothing is lost by accident');
     await post('/api/note', { id: 'ua', wall: 'undo-wall', x: 10, y: 10, text: 'note A' });
     await post('/api/note', { id: 'ub', wall: 'undo-wall', x: 300, y: 10, text: 'note B' });
