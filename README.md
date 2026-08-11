@@ -99,13 +99,19 @@ eight things onto the wall beside them:
 | **Clock** | the time, no seconds |
 | **Date** | day, weekday, month and year |
 | **Countdown** | days to a date you set |
+| **Calendar** | this month, today circled, with days you mark |
 | **Checklist** | tap a line to tick it — the groceries widget |
 | **Table / rules** | rows and columns: house rules, a rota, a score sheet |
 | **Heading** | large text, for labelling a region of the wall |
 | **Tally counter** | tap to add one |
 | **Room QR** | scan to open this room |
 
-**Checklists, tables and tallies keep their contents as plain text.** A checklist
+The calendar is **computed, not fetched** — a month grid needs only the date.
+Lines like `5 Bin day` put a mark on that day and list it underneath, which
+covers the recurring things a wall calendar is actually for without a calendar
+account, a sync token or any outbound request. Weeks start on Monday.
+
+**Checklists, tables, calendars and tallies keep their contents as plain text.** A checklist
 is one item per line, ticked by starting the line with `x `. A table is one row
 per line with cells split by `|`. That keeps them editable as text, greppable,
 and readable in a room's JSON backup — and it means the editor is the same

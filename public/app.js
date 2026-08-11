@@ -794,6 +794,58 @@
       return html + '</div>';
     }
 
+    if (n.kind === 'calendar') {
+      // A month, computed from the date — no data source, nothing fetched.
+      // Lines like "5 Bin day" put a dot on that day and list it underneath,
+      // which covers the recurring things a wall calendar is actually for.
+      var y = now.getFullYear(), mo = now.getMonth();
+      var first = new Date(y, mo, 1).getDay();
+      var days = new Date(y, mo + 1, 0).getDate();
+      var today = now.getDate();
+
+      var marks = {};
+      var marked = [];
+      var mlines = String(n.text || '').split(NEWLINE);
+      for (var mi = 0; mi < mlines.length; mi++) {
+        var mm = mlines[mi].match(/^\s*(\d{1,2})\s+(.*)$/);
+        if (!mm) continue;
+        var d = parseInt(mm[1], 10);
+        if (d < 1 || d > days) continue;
+        marks[d] = true;
+        marked.push({ day: d, label: mm[2] });
+      }
+
+      var cal = '<div class="w-cal"><div class="w-cal-head">' +
+        MONTHS[mo] + ' ' + y + '</div><table class="w-cal-grid"><tr>';
+      var dow = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+      for (var di = 0; di < 7; di++) cal += '<th>' + dow[di] + '</th>';
+      cal += '</tr><tr>';
+
+      // Weeks start on Monday, which is what a wall calendar in most of the
+      // world looks like; getDay() counts from Sunday.
+      var lead = (first + 6) % 7;
+      for (var b = 0; b < lead; b++) cal += '<td></td>';
+      var col = lead;
+      for (var day = 1; day <= days; day++) {
+        if (col === 7) { cal += '</tr><tr>'; col = 0; }
+        cal += '<td class="' + (day === today ? 'today ' : '') +
+          (marks[day] ? 'marked' : '') + '">' + day + '</td>';
+        col++;
+      }
+      while (col++ < 7) cal += '<td></td>';
+      cal += '</tr></table>';
+
+      if (marked.length) {
+        marked.sort(function (a, b2) { return a.day - b2.day; });
+        cal += '<div class="w-cal-list">';
+        for (var k = 0; k < marked.length && k < 4; k++) {
+          cal += '<span><b>' + marked[k].day + '</b> ' + escapeHTML(marked[k].label) + '</span>';
+        }
+        cal += '</div>';
+      }
+      return cal + '</div>';
+    }
+
     if (n.kind === 'table') {
       // Rows are lines, cells are split on a pipe — a rule book, a rota, a
       // score sheet. Kept as plain text so it stays editable as text, and so
@@ -1169,6 +1221,8 @@
                'Start a line with "x " to tick it.',
     table: 'One row per line, cells split by |' + String.fromCharCode(10) +
            'First row is the heading.',
+    calendar: 'Mark days, one per line:' + String.fromCharCode(10) +
+              '5 Bin day' + String.fromCharCode(10) + '19 Dentist',
     heading: 'The heading text',
     tally: 'First line: the count' + String.fromCharCode(10) + 'Then: what it counts',
     qr: 'Caption under the code (optional)',
@@ -1479,6 +1533,8 @@
     countdown: { w: 240, h: 190, color: 'orange', text: '2026-12-25\nChristmas' },
     checklist: { w: 260, h: 220, color: 'yellow',
                  text: 'Milk' + NEWLINE + 'Rice' + NEWLINE + 'x Batteries' },
+    calendar:  { w: 300, h: 300, color: 'blue',
+                 text: '' },
     table:     { w: 340, h: 220, color: 'green',
                  text: 'Rule | Who' + NEWLINE + '--- | ---' + NEWLINE +
                        'No shoes indoors | everyone' + NEWLINE + 'Bins out Tuesday | Sam' },

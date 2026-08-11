@@ -49,8 +49,8 @@ const COLORS = ['yellow', 'pink', 'blue', 'green', 'orange', 'purple'];
 // model on the landing page stay true. A weather tile would need outbound
 // network and an API key, and a system-stats tile would need an agent on the
 // host; both are a different product wearing this one's clothes.
-const KINDS = ['note', 'clock', 'date', 'countdown', 'checklist', 'table',
-               'heading', 'tally', 'qr'];
+const KINDS = ['note', 'clock', 'date', 'countdown', 'calendar', 'checklist',
+               'table', 'heading', 'tally', 'qr'];
 
 // Templates are just pre-placed notes. No special "column" or "lane" type: a
 // kanban header is a wide short note, and the columns are a convention the eye
