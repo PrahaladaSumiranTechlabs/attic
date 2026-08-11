@@ -117,10 +117,17 @@ per line with cells split by `|`. That keeps them editable as text, greppable,
 and readable in a room's JSON backup — and it means the editor is the same
 editor, not a bespoke form per widget.
 
-Tapping has the obvious meaning on the widgets that have one: a checklist item
-ticks, a tally counts up. Only the padding around them opens the editor, because
-answering an obvious gesture with a textarea full of raw markup is the wrong
-answer. Every widget's editor carries a hint saying what its text means.
+**Tap acts, hold edits.** Tapping has the obvious meaning on the widgets that
+have one — a checklist item ticks, a tally counts up — because answering an
+obvious gesture with a textarea full of raw markup is the wrong answer. Holding
+for about half a second opens the editor and its action bar on any widget,
+whatever its kind.
+
+That rule exists because the first version had none: a tally consumed *every*
+tap, so the action bar was unreachable and the widget could not be edited or
+deleted at all. The widgets whose tap is taken say so on themselves.
+
+Every widget's editor carries a hint saying what its text means.
 
 **A widget is a note with a `kind`.** A clock is a note that draws a clock. That
 is not a shortcut — it means widgets inherit placement, dragging, resizing, sync,

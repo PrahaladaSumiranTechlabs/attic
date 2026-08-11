@@ -305,6 +305,18 @@ body.eink .w-table th { border-bottom: 3px solid #000; }
   background: rgba(255, 255, 255, 0.5);
 }
 
+.w-hint-list {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(0, 0, 0, 0.3);
+}
+
+body.eink .w-hint-list { color: #000; }
+body.viewonly .w-hint-list { display: none; }
+
 .w-item.done .w-text { text-decoration: line-through; opacity: 0.5; }
 .w-item.done .w-box { background: rgba(0, 0, 0, 0.08); }
 

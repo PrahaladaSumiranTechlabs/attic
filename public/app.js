@@ -702,6 +702,10 @@
 
   var NEWLINE = String.fromCharCode(10);
 
+  // Long enough not to fire on a normal tap, short enough that nobody gives up
+  // and decides the widget is stuck.
+  var HOLD_MS = 450;
+
   var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
                 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -774,14 +778,15 @@
       var tlabel = escapeHTML(lines.slice(1).join(NEWLINE));
       return '<div class="w-tally"><b>' + count + '</b>' +
         (tlabel ? '<span class="w-label">' + tlabel + '</span>' : '') +
-        '<span class="w-hint">tap to add</span></div>';
+        '<span class="w-hint">tap +1 &middot; hold to edit</span></div>';
     }
 
     if (n.kind === 'checklist') {
       // One item per line. A line beginning with "x " is done — plain enough
       // that the raw text is still readable and editable as text.
       var items = String(n.text || '').split(NEWLINE);
-      var html = '<div class="w-checklist">';
+      var html = '<div class="w-checklist"><span class="w-hint-list">' +
+        'tap to tick &middot; hold to edit</span>';
       for (var i = 0; i < items.length; i++) {
         var raw = items[i];
         if (!raw.replace(/^\s+|\s+$/g, '')) continue;
@@ -1145,11 +1150,17 @@
       if (moved) {
         if (isKanban()) moveCard(id, lastX, lastY);
         else saveNote(notes[id]);
-      } else if (new Date().getTime() - downAt < 700) {
+      } else {
+        // Tap acts, hold edits.
+        //
         // On some widgets a tap has its own meaning — ticking an item, adding
-        // one to a count. Opening a textarea full of raw markup instead would
-        // be the wrong answer to an obvious gesture.
-        if (!widgetTap(id, downTarget)) openEditor(id);
+        // one to a count — so opening a textarea full of raw markup would be
+        // the wrong answer to an obvious gesture. But a tally consumed *every*
+        // tap, which left no way to reach the action bar and therefore no way
+        // to delete it. Holding always opens the editor, whatever the kind.
+        var held = new Date().getTime() - downAt;
+        if (held >= HOLD_MS) openEditor(id);
+        else if (!widgetTap(id, downTarget)) openEditor(id);
       }
     }
 
