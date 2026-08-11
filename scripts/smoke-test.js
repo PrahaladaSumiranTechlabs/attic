@@ -216,6 +216,21 @@ async function waitForServer(tries = 60) {
     check('and comes back still a clock',
       backW.body.notes.find((n) => n.id === 'wclock' && !n.deleted).kind === 'clock');
 
+    for (const kind of ['checklist', 'table', 'heading', 'tally']) {
+      const w = await post('/api/note',
+        { id: 'w-' + kind, wall: 'widget-wall', x: 10, y: 10, kind });
+      check(kind + ' is an accepted kind', w.body.note.kind === kind);
+    }
+
+    // A checklist and a table are plain text, which is what keeps them
+    // editable, greppable, and readable in a room backup.
+    const list = await post('/api/note', {
+      id: 'wlist', wall: 'widget-wall', x: 10, y: 10, kind: 'checklist',
+      text: ['Milk', 'x Rice'].join('\n'),
+    });
+    check('a checklist stores its items as plain text',
+      list.body.note.text.indexOf('x Rice') !== -1);
+
     console.log('nothing is lost by accident');
     await post('/api/note', { id: 'ua', wall: 'undo-wall', x: 10, y: 10, text: 'note A' });
     await post('/api/note', { id: 'ub', wall: 'undo-wall', x: 300, y: 10, text: 'note B' });

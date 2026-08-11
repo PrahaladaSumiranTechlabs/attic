@@ -700,6 +700,8 @@
 
   function two(n) { return (n < 10 ? '0' : '') + n; }
 
+  var NEWLINE = String.fromCharCode(10);
+
   var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
                 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -759,6 +761,64 @@
         (label ? '<span class="w-label">' + label + '</span>' : '') + '</div>';
     }
 
+    if (n.kind === 'heading') {
+      return '<div class="w-heading">' + (label || 'Heading') + '</div>';
+    }
+
+    if (n.kind === 'tally') {
+      // The count is the first line; the label is the rest. Tapping the widget
+      // adds one, which is the entire point of a tally.
+      var lines = String(n.text || '').split(NEWLINE);
+      var count = parseInt(lines[0], 10);
+      if (isNaN(count)) count = 0;
+      var tlabel = escapeHTML(lines.slice(1).join(NEWLINE));
+      return '<div class="w-tally"><b>' + count + '</b>' +
+        (tlabel ? '<span class="w-label">' + tlabel + '</span>' : '') +
+        '<span class="w-hint">tap to add</span></div>';
+    }
+
+    if (n.kind === 'checklist') {
+      // One item per line. A line beginning with "x " is done — plain enough
+      // that the raw text is still readable and editable as text.
+      var items = String(n.text || '').split(NEWLINE);
+      var html = '<div class="w-checklist">';
+      for (var i = 0; i < items.length; i++) {
+        var raw = items[i];
+        if (!raw.replace(/^\s+|\s+$/g, '')) continue;
+        var done = /^\s*x\s+/i.test(raw);
+        var body = raw.replace(/^\s*x\s+/i, '');
+        html += '<div class="w-item' + (done ? ' done' : '') + '" data-line="' + i + '">' +
+          '<span class="w-box">' + (done ? '&#10003;' : '') + '</span>' +
+          '<span class="w-text">' + escapeHTML(body) + '</span></div>';
+      }
+      return html + '</div>';
+    }
+
+    if (n.kind === 'table') {
+      // Rows are lines, cells are split on a pipe — a rule book, a rota, a
+      // score sheet. Kept as plain text so it stays editable as text, and so
+      // the /legacy page and the JSON backup show something readable.
+      var rows = String(n.text || '').split(NEWLINE);
+      var out = '<table class="w-table">';
+      var body = false;
+      for (var r = 0; r < rows.length; r++) {
+        var line = rows[r];
+        if (!line.replace(/^\s+|\s+$/g, '')) continue;
+        // A line of only dashes and pipes is a header rule, as in markdown.
+        if (/^[\s|:-]+$/.test(line)) { body = true; continue; }
+        var cells = line.split('|');
+        var head = !body && r === 0;
+        out += '<tr>';
+        for (var c = 0; c < cells.length; c++) {
+          var cell = escapeHTML(cells[c].replace(/^\s+|\s+$/g, ''));
+          out += head ? '<th>' + cell + '</th>' : '<td>' + cell + '</td>';
+        }
+        out += '</tr>';
+        if (head) body = true;
+      }
+      return out + '</table>';
+    }
+
     if (n.kind === 'qr') {
       // Filled in asynchronously; the server draws it with the same encoder the
       // connect page uses.
@@ -810,6 +870,8 @@
       if (!notes.hasOwnProperty(id)) continue;
       var n = notes[id];
       if (!n.kind || n.kind === 'note' || n.kind === 'qr') continue;
+      // Static: nothing time-dependent to re-evaluate.
+      if (n.kind === 'heading' || n.kind === 'table') continue;
       var el = els[id];
       if (!el) continue;
       var html = widgetHTML(n);
@@ -817,6 +879,53 @@
       widgetLast[id] = html;
       el.firstChild.innerHTML = html;
     }
+  }
+
+  // Returns true when the tap was the widget's own gesture and should not open
+  // the editor.
+  function widgetTap(id, target) {
+    var n = notes[id];
+    if (!n || !n.kind || n.kind === 'note') return false;
+
+    if (n.kind === 'tally') {
+      var lines = String(n.text || '').split(NEWLINE);
+      var count = parseInt(lines[0], 10);
+      if (isNaN(count)) count = 0;
+      lines[0] = String(count + 1);
+      n.text = lines.join(NEWLINE);
+      widgetLast[id] = null;
+      saveNote(n);
+      tickWidgets();
+      return true;
+    }
+
+    if (n.kind === 'checklist') {
+      // Only a tap on an item counts; tapping the padding still opens the
+      // editor, which is how you add and reword items.
+      var node = target;
+      var row = null;
+      while (node && node !== els[id]) {
+        if (node.getAttribute && node.getAttribute('data-line') !== null) { row = node; break; }
+        node = node.parentNode;
+      }
+      if (!row) return false;
+
+      var i = parseInt(row.getAttribute('data-line'), 10);
+      var items = String(n.text || '').split(NEWLINE);
+      if (isNaN(i) || i < 0 || i >= items.length) return false;
+
+      items[i] = /^\s*x\s+/i.test(items[i])
+        ? items[i].replace(/^\s*x\s+/i, '')
+        : 'x ' + items[i].replace(/^\s+/, '');
+
+      n.text = items.join(NEWLINE);
+      widgetLast[id] = null;
+      saveNote(n);
+      tickWidgets();
+      return true;
+    }
+
+    return false;
   }
 
   // ----------------------------------------------------------- note render
@@ -919,10 +1028,11 @@
   // old mobile Safari, and pointer events are far too new to rely on.
 
   function attachDrag(el, id) {
-    var startX, startY, origX, origY, moved, downAt, lastX, lastY;
+    var startX, startY, origX, origY, moved, downAt, lastX, lastY, downTarget;
 
     function down(e) {
       if (viewOnly || editingId || kioskOn) return;
+      downTarget = e.target;
       var t = e.touches ? e.touches[0] : e;
       startX = lastX = t.clientX;
       startY = lastY = t.clientY;
@@ -984,7 +1094,10 @@
         if (isKanban()) moveCard(id, lastX, lastY);
         else saveNote(notes[id]);
       } else if (new Date().getTime() - downAt < 700) {
-        openEditor(id);
+        // On some widgets a tap has its own meaning — ticking an item, adding
+        // one to a count. Opening a textarea full of raw markup instead would
+        // be the wrong answer to an obvious gesture.
+        if (!widgetTap(id, downTarget)) openEditor(id);
       }
     }
 
@@ -1046,6 +1159,20 @@
   // You type in the note, not in a dialog about the note. The old modal made
   // "+ note" save an empty note and then rely on the right button to clean it
   // up — dismiss it any other way and a blank ghost note stayed on the wall.
+
+  var EDIT_HINTS = {
+    clock: 'Label under the time — e.g. Kitchen (optional)',
+    date: 'Label under the date (optional)',
+    countdown: 'First line: 2026-12-25 09:00' + String.fromCharCode(10) +
+               'Then: what it is',
+    checklist: 'One item per line.' + String.fromCharCode(10) +
+               'Start a line with "x " to tick it.',
+    table: 'One row per line, cells split by |' + String.fromCharCode(10) +
+           'First row is the heading.',
+    heading: 'The heading text',
+    tally: 'First line: the count' + String.fromCharCode(10) + 'Then: what it counts',
+    qr: 'Caption under the code (optional)',
+  };
 
   var actions = document.getElementById('noteactions');
 
@@ -1109,6 +1236,9 @@
     }
 
     addClass(el, 'editing');
+    // Widgets keep their configuration in the same text field, so say what the
+    // field means rather than presenting raw markup with no explanation.
+    inlineTA.setAttribute('placeholder', EDIT_HINTS[notes[id].kind] || '');
     inlineTA.value = notes[id].text;
     inlineTA.style.left = el.style.left;
     inlineTA.style.top = el.style.top;
@@ -1347,6 +1477,13 @@
     date:      { w: 220, h: 200, color: 'green',  text: '' },
     // The first line is the target; everything after it is the label.
     countdown: { w: 240, h: 190, color: 'orange', text: '2026-12-25\nChristmas' },
+    checklist: { w: 260, h: 220, color: 'yellow',
+                 text: 'Milk' + NEWLINE + 'Rice' + NEWLINE + 'x Batteries' },
+    table:     { w: 340, h: 220, color: 'green',
+                 text: 'Rule | Who' + NEWLINE + '--- | ---' + NEWLINE +
+                       'No shoes indoors | everyone' + NEWLINE + 'Bins out Tuesday | Sam' },
+    heading:   { w: 320, h: 90,  color: 'pink',   text: 'This week' },
+    tally:     { w: 200, h: 160, color: 'purple', text: '0' + NEWLINE + 'Cups of tea' },
     qr:        { w: 200, h: 230, color: 'yellow', text: 'Scan to open this wall' },
   };
 
@@ -1364,6 +1501,7 @@
     saveNote(n);
     tickWidgets();
     // A countdown is useless until you set its date, so open it straight away.
+    // The rest arrive with sensible contents and can be edited when wanted.
     if (kind === 'countdown') openEditor(n.id);
   }
 

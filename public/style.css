@@ -193,6 +193,102 @@ body.kiosk #canvas { cursor: default; }
   margin: 0 auto;
 }
 
+/* A table for a rule book, a rota, a score sheet. */
+.w-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 14px;
+}
+
+.w-table th, .w-table td {
+  padding: 5px 7px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+  vertical-align: top;
+}
+
+.w-table th {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(0, 0, 0, 0.55);
+  border-bottom: 2px solid rgba(0, 0, 0, 0.28);
+}
+
+.w-table tr:last-child td { border-bottom: 0; }
+
+body.eink .w-table th, body.eink .w-table td { color: #000; border-bottom: 1px solid #000; }
+body.eink .w-table th { border-bottom: 3px solid #000; }
+
+/* A checklist is the widget a kitchen wall actually wants: tap a line to tick
+   it, and the raw text stays readable so it can still be edited as text. */
+.w-checklist { text-align: left; overflow-y: auto; height: 100%; }
+.note.widget.w-table .note-body { text-align: left; overflow: auto; }
+
+.w-item {
+  display: block;
+  padding: 5px 2px;
+  font-size: 15px;
+  line-height: 1.3;
+  cursor: pointer;
+  min-height: 26px;
+}
+
+.w-box {
+  display: inline-block;
+  width: 17px;
+  height: 17px;
+  margin-right: 8px;
+  vertical-align: -3px;
+  text-align: center;
+  line-height: 15px;
+  font-size: 13px;
+  border: 1.5px solid rgba(0, 0, 0, 0.4);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.w-item.done .w-text { text-decoration: line-through; opacity: 0.5; }
+.w-item.done .w-box { background: rgba(0, 0, 0, 0.08); }
+
+.w-heading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #23211c;
+}
+
+.w-tally b {
+  display: block;
+  font-size: 54px;
+  line-height: 1.05;
+  font-weight: 700;
+  color: #23211c;
+}
+
+.w-tally .w-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(0, 0, 0, 0.35);
+}
+
+body.eink .w-heading, body.eink .w-tally b { color: #000; }
+body.eink .w-box { border: 2px solid #000; background: #fff; }
+body.eink .w-item.done .w-box { background: #000; color: #fff; }
+body.eink .w-tally .w-hint { color: #000; }
+
+/* Widgets are not editable in a read-only view, so they should not invite a
+   tap that does nothing. */
+body.viewonly .w-item, body.viewonly .w-tally .w-hint { cursor: default; }
+body.viewonly .w-tally .w-hint { display: none; }
+
 /* On e-paper the fill goes, the border carries the colour, and the numerals
    are the only thing with weight — which is exactly what an e-ink panel is
    good at. */

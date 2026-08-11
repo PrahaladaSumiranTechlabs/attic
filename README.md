@@ -91,8 +91,30 @@ on the wall.
 
 ## Widgets
 
-A wall-mounted tablet wants more than notes on it, so **+ widget** drops a clock,
-a date, a countdown, or a QR of the room's own address.
+A wall-mounted tablet wants more than notes on it, so **+ widget** drops one of
+eight things onto the wall beside them:
+
+| Widget | What it is |
+| --- | --- |
+| **Clock** | the time, no seconds |
+| **Date** | day, weekday, month and year |
+| **Countdown** | days to a date you set |
+| **Checklist** | tap a line to tick it — the groceries widget |
+| **Table / rules** | rows and columns: house rules, a rota, a score sheet |
+| **Heading** | large text, for labelling a region of the wall |
+| **Tally counter** | tap to add one |
+| **Room QR** | scan to open this room |
+
+**Checklists, tables and tallies keep their contents as plain text.** A checklist
+is one item per line, ticked by starting the line with `x `. A table is one row
+per line with cells split by `|`. That keeps them editable as text, greppable,
+and readable in a room's JSON backup — and it means the editor is the same
+editor, not a bespoke form per widget.
+
+Tapping has the obvious meaning on the widgets that have one: a checklist item
+ticks, a tally counts up. Only the padding around them opens the editor, because
+answering an obvious gesture with a textarea full of raw markup is the wrong
+answer. Every widget's editor carries a hint saying what its text means.
 
 **A widget is a note with a `kind`.** A clock is a note that draws a clock. That
 is not a shortcut — it means widgets inherit placement, dragging, resizing, sync,
