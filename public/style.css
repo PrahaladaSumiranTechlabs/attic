@@ -317,6 +317,62 @@ body.eink .w-table th { border-bottom: 3px solid #000; }
 body.eink .w-hint-list { color: #000; }
 body.viewonly .w-hint-list { display: none; }
 
+.w-item { position: relative; padding-right: 20px; }
+.w-text { display: inline; }
+
+.w-del {
+  position: absolute;
+  right: 0;
+  top: 4px;
+  width: 18px;
+  height: 18px;
+  line-height: 16px;
+  text-align: center;
+  font-size: 15px;
+  color: rgba(0, 0, 0, 0.25);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.w-item:hover .w-del { color: #b03030; background: rgba(176, 48, 48, 0.08); }
+
+.w-add {
+  margin-top: 4px;
+  padding: 5px 2px;
+  font-size: 13.5px;
+  color: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  min-height: 26px;
+}
+
+.w-add:hover { color: #23211c; }
+
+/* The input a widget puts in front of you instead of asking you to edit raw
+   text. Sits inside the note, so it scales with the wall. */
+.w-input {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px 8px;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 15px;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #23211c;
+  outline: none;
+}
+
+body.eink .w-input { border: 2px solid #000; border-radius: 0; background: #fff; }
+body.eink .w-add, body.eink .w-del { color: #000; }
+
+/* Nothing here is editable from a read-only view. */
+body.viewonly .w-add, body.viewonly .w-del { display: none; }
+body.viewonly .w-cal-grid td { cursor: default; }
+
+.w-cal-grid td[data-day] { cursor: pointer; }
+
 .w-item.done .w-text { text-decoration: line-through; opacity: 0.5; }
 .w-item.done .w-box { background: rgba(0, 0, 0, 0.08); }
 

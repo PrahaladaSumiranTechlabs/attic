@@ -785,8 +785,7 @@
       // One item per line. A line beginning with "x " is done — plain enough
       // that the raw text is still readable and editable as text.
       var items = String(n.text || '').split(NEWLINE);
-      var html = '<div class="w-checklist"><span class="w-hint-list">' +
-        'tap to tick &middot; hold to edit</span>';
+      var html = '<div class="w-checklist">';
       for (var i = 0; i < items.length; i++) {
         var raw = items[i];
         if (!raw.replace(/^\s+|\s+$/g, '')) continue;
@@ -794,9 +793,10 @@
         var body = raw.replace(/^\s*x\s+/i, '');
         html += '<div class="w-item' + (done ? ' done' : '') + '" data-line="' + i + '">' +
           '<span class="w-box">' + (done ? '&#10003;' : '') + '</span>' +
-          '<span class="w-text">' + escapeHTML(body) + '</span></div>';
+          '<span class="w-text">' + escapeHTML(body) + '</span>' +
+          '<span class="w-del" title="remove">&times;</span></div>';
       }
-      return html + '</div>';
+      return html + '<div class="w-add">+ add item</div></div>';
     }
 
     if (n.kind === 'calendar') {
@@ -833,7 +833,7 @@
       var col = lead;
       for (var day = 1; day <= days; day++) {
         if (col === 7) { cal += '</tr><tr>'; col = 0; }
-        cal += '<td class="' + (day === today ? 'today ' : '') +
+        cal += '<td data-day="' + day + '" class="' + (day === today ? 'today ' : '') +
           (marks[day] ? 'marked' : '') + '">' + day + '</td>';
         col++;
       }
@@ -929,6 +929,7 @@
       if (!n.kind || n.kind === 'note' || n.kind === 'qr') continue;
       // Static: nothing time-dependent to re-evaluate.
       if (n.kind === 'heading' || n.kind === 'table') continue;
+      if (id === inlineWidgetId) continue; // do not wipe an input being typed in
       var el = els[id];
       if (!el) continue;
       var html = widgetHTML(n);
@@ -936,6 +937,57 @@
       widgetLast[id] = html;
       el.firstChild.innerHTML = html;
     }
+  }
+
+  // A single-line input placed inside a widget, so adding a grocery item or
+  // naming a day happens on the widget itself rather than by editing raw text
+  // in a textarea. Deliberately an <input>, not a floating dialog: it inherits
+  // the wall's zoom and needs no positioning maths.
+  var inlineWidgetId = null;
+  var inlineInput = null;
+
+  function closeInlineInput() {
+    if (inlineInput && inlineInput.parentNode) inlineInput.parentNode.removeChild(inlineInput);
+    inlineInput = null;
+    inlineWidgetId = null;
+  }
+
+  function askInline(id, current, placeholder, onDone) {
+    closeInlineInput();
+    var el = els[id];
+    if (!el) return;
+
+    inlineWidgetId = id;
+    inlineInput = document.createElement('input');
+    inlineInput.type = 'text';
+    inlineInput.className = 'w-input';
+    inlineInput.value = current || '';
+    inlineInput.setAttribute('placeholder', placeholder || '');
+
+    inlineInput.onkeydown = function (e) {
+      var code = e.keyCode || e.which;
+      if (code === 13) { var v = inlineInput.value; closeInlineInput(); onDone(v); return false; }
+      if (code === 27) { closeInlineInput(); tickWidgets(); return false; }
+      if (e.stopPropagation) e.stopPropagation();
+      return true;
+    };
+    inlineInput.onblur = function () {
+      var v = inlineInput ? inlineInput.value : null;
+      closeInlineInput();
+      if (v !== null) onDone(v);
+    };
+
+    el.firstChild.appendChild(inlineInput);
+    try { inlineInput.focus(); } catch (e) {}
+  }
+
+  function setWidgetText(id, text) {
+    var n = notes[id];
+    if (!n) return;
+    n.text = text;
+    widgetLast[id] = null;
+    saveNote(n);
+    tickWidgets();
   }
 
   // Returns true when the tap was the widget's own gesture and should not open
@@ -957,28 +1009,74 @@
     }
 
     if (n.kind === 'checklist') {
-      // Only a tap on an item counts; tapping the padding still opens the
-      // editor, which is how you add and reword items.
       var node = target;
       var row = null;
+      var hitAdd = false;
+      var hitDel = false;
       while (node && node !== els[id]) {
+        if (node.className === 'w-add') { hitAdd = true; break; }
+        if (node.className === 'w-del') { hitDel = true; }
         if (node.getAttribute && node.getAttribute('data-line') !== null) { row = node; break; }
         node = node.parentNode;
       }
-      if (!row) return false;
 
+      if (hitAdd) {
+        askInline(id, '', 'New item, then Enter', function (v) {
+          if (!v.replace(/^\s+|\s+$/g, '')) { tickWidgets(); return; }
+          var lines = String(notes[id].text || '').split(NEWLINE);
+          if (lines.length === 1 && !lines[0]) lines = [];
+          lines.push(v);
+          setWidgetText(id, lines.join(NEWLINE));
+          // Adding one item usually means adding several, so offer the next.
+          window.setTimeout(function () { widgetTap(id, els[id].querySelector('.w-add')); }, 0);
+        });
+        return true;
+      }
+
+      if (!row) return false;
       var i = parseInt(row.getAttribute('data-line'), 10);
       var items = String(n.text || '').split(NEWLINE);
       if (isNaN(i) || i < 0 || i >= items.length) return false;
 
+      if (hitDel) {
+        items.splice(i, 1);
+        setWidgetText(id, items.join(NEWLINE));
+        return true;
+      }
+
       items[i] = /^\s*x\s+/i.test(items[i])
         ? items[i].replace(/^\s*x\s+/i, '')
         : 'x ' + items[i].replace(/^\s+/, '');
+      setWidgetText(id, items.join(NEWLINE));
+      return true;
+    }
 
-      n.text = items.join(NEWLINE);
-      widgetLast[id] = null;
-      saveNote(n);
-      tickWidgets();
+    if (n.kind === 'calendar') {
+      // Tap a day to say what is on it; clear the text to unmark it. No raw
+      // "5 Bin day" line to remember.
+      var cell = target;
+      while (cell && cell !== els[id]) {
+        if (cell.getAttribute && cell.getAttribute('data-day')) break;
+        cell = cell.parentNode;
+      }
+      if (!cell || !cell.getAttribute || !cell.getAttribute('data-day')) return false;
+
+      var day = parseInt(cell.getAttribute('data-day'), 10);
+      var lines = String(n.text || '').split(NEWLINE);
+      var existing = '';
+      var at = -1;
+      for (var li = 0; li < lines.length; li++) {
+        var lm = lines[li].match(/^\s*(\d{1,2})\s+(.*)$/);
+        if (lm && parseInt(lm[1], 10) === day) { existing = lm[2]; at = li; break; }
+      }
+
+      askInline(id, existing, 'What is on the ' + day + 'th? (empty clears)', function (v) {
+        var text = v.replace(/^\s+|\s+$/g, '');
+        var out = lines.slice();
+        if (at !== -1) out.splice(at, 1);
+        if (text) out.push(day + ' ' + text);
+        setWidgetText(id, out.filter(function (l) { return l !== ''; }).join(NEWLINE));
+      });
       return true;
     }
 
@@ -1089,6 +1187,10 @@
 
     function down(e) {
       if (viewOnly || editingId || kioskOn) return;
+      // A press inside a widget's own input is typing, not dragging. Without
+      // this the drag handler's preventDefault would stop it ever focusing.
+      var tag = e.target && e.target.tagName ? e.target.tagName.toUpperCase() : '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       downTarget = e.target;
       var t = e.touches ? e.touches[0] : e;
       startX = lastX = t.clientX;

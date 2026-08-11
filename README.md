@@ -123,6 +123,13 @@ obvious gesture with a textarea full of raw markup is the wrong answer. Holding
 for about half a second opens the editor and its action bar on any widget,
 whatever its kind.
 
+**The checklist and calendar are edited on themselves, not in their text.** A
+checklist has an *add item* row that opens a one-line input and offers the next
+one as soon as you press Enter, plus an × on each row. A calendar day opens an
+input asking what is on it; clearing that input unmarks the day. Nobody should
+have to remember that `x ` ticks a line or that `5 Bin day` marks the fifth —
+that syntax is the storage format, not the interface.
+
 That rule exists because the first version had none: a tally consumed *every*
 tap, so the action bar was unreachable and the widget could not be edited or
 deleted at all. The widgets whose tap is taken say so on themselves.
